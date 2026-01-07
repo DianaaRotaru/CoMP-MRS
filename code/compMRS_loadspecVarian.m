@@ -339,7 +339,7 @@ out.Bo=out.txfrq/42.577/1e6;
 out.seq=sequence;
 out.te=te;
 out.tr=tr;
-out.pointsToLeftshift=0;
+out.pointsToLeftshift=par.lsfid;
 out.filepath=filename;
 
 %FILLING IN THE FLAGS

@@ -228,11 +228,12 @@ par.combinedAcq      = [];
 par.reductionFactor  = [];
 par.referenceUnits   = [];
 par.referenceLines   = [];
+par.lsfid            = []; % added 20260101 Thanh
 
 names = fieldnames(par);
 params = fieldnames(data);
 
-for i = 1:length(params);
+for i = 1:length(params)
    par.(params{i}) = data.(params{i}).value;
 end
 
