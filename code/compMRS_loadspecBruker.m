@@ -4,7 +4,7 @@
 %Wendy Oakden, Sunnybrook Research Institute, 2020
 %Jamie Near, Sunnybrook Research Institute, 2023
 %Georg Oeltzschner, Johns Hopkins University 2025
-%Thanh Phong Le, EPFL, 2025
+%Thanh Phong Lê, EPFL, 2025
 %Diana Rotaru, Medical University of Vienna, 2025
 %
 % USAGE:
@@ -74,6 +74,12 @@ end
 acqpFile        = fullfile(inDir, 'acqp');
 headerACQP      = compMRS_parseBrukerFormat(acqpFile);
 
+% Populate the header information from the ACQUS file
+acqusFile       = fullfile(inDir, 'acqus');
+if isfile(acqusFile)
+    headerACQUS = compMRS_parseBrukerFormat(acqusFile);
+end
+
 % Populate the header information from the Method file
 methodFile      = fullfile(inDir, 'method');
 headerMethod    = compMRS_parseBrukerFormat(methodFile);
@@ -95,6 +101,7 @@ recoFile        = fullfile(inDir, 'pdata', '1', 'reco');
 if isfile(recoFile)
     headerRECO  = compMRS_parseBrukerFormat(recoFile);
 end
+
 
 % Get a few important bits
 % Software version
@@ -168,22 +175,25 @@ else
 end
 
 % Group delay (i.e. left shift)
-if contains(version, ["PV 5", "PV 6", "PV 7", "PV-7"])
-    leftshift       = round(headerACQP.GRPDLY);
-elseif contains(version,'PV-360')
-    % I'm not sure this differentiation is necessary but Jessie is getting
-    % GRPDELY from the ACQUS file - might remove if not needed
-    if exist('headerACQUS', 'var')
-        leftshift       = round(headerACQUS.GRPDLY);
+leftshift=-1;
+if isfield(headerACQP,'GRPDLY')
+    leftshift = headerACQP.GRPDLY;
+end
+
+if leftshift==-1 && exist('headerACQUS', 'var')
+    leftshift       = headerACQUS.GRPDLY;
+end
+
+if leftshift==-1 && isfield(headerACQP, 'ACQ_RxFilterInfo')
+    if ~iscell(headerACQP.ACQ_RxFilterInfo{1})
+        leftshift = str2double(headerACQP.ACQ_RxFilterInfo{1});
     else
-        leftshift       = round(headerACQP.GRPDLY);
+        leftshift = str2double(headerACQP.ACQ_RxFilterInfo{1}{1});
     end
-    
-    % Found a couple instances of GRPDLY being -1, in that case, set it to
-    % the PV360 default which is 77 (from Brayan Alves' script)
-    if leftshift == -1
-        leftshift = 77;
-    end
+end
+
+if leftshift==-1
+    disp('NO GROUP DELAY FOUND')
 end
 
 % Spectral width
@@ -202,7 +212,7 @@ elseif contains(version, ["PV 6", "PV 7", "PV-7", "PV-360"])
     txfrq       = headerMethod.PVM_FrqWork(1)*1e6;
     txfrq_ref   = headerMethod.PVM_FrqRef(1)*1e6;
 end
-Bo=txfrq/42577000;
+Bo=txfrq_ref/42577000;
 
 % spectralwidthppm is stored in the header BUT it is slightly different 
 % than if we calculate it from txfrq and spectralwidth - this suggests we 
@@ -213,15 +223,16 @@ Bo=txfrq/42577000;
 spectralwidthppm=spectralwidth/(txfrq_ref/1e6); % old method
 spectralwidthppm=headerMethod.PVM_SpecSW; % better method?
 
-% Center frequency is *explicitly* stored in the headers from PV6 onwards -
-% mostly it's been 4.7 so we'll assume that for PV5 too. 
+% Center frequency is *explicitly* stored in the headers from PV6 onwards
 % For compatibility with the other FID-A functions, we should probably
 % store centerfreq in the FID-A header?
-if contains(version, ["PV 5", "PV 6", "PV 7", "PV-7"])
-    centerfreq      = 4.7;
+if contains(version, ["PV 5"])
+    centerfreq      = 4.7 + headerMethod.PVM_SpecOffsetppm;
     centerfreq_ref  = centerfreq;
-elseif contains(version,'PV-360')
-    centerfreq      = headerMethod.PVM_FrqRefPpm(1);
+elseif contains(version,["PV 6", "PV 7", "PV-7"])
+    centerfreq      = 4.7 + headerACQP.ACQ_O1B_list/headerACQP.BF1;
+elseif contains(version,["PV-360"])
+    centerfreq      = headerMethod.PVM_FrqWorkPpm(1);
 end
 
 % Receiver gain which we seem to need when reconciling raw and processed data
@@ -334,7 +345,7 @@ if strcmpi(rawData,'y')
     end
 
     averages=rawAverages;  %since these data are uncombined;
-    out.flags.averaged=0; %make the flags structure
+
 
     %If there are multiple receivers *I think* that these always get stored
     %separately by default in the fid.raw file. Therefore, at this stage, 
@@ -344,21 +355,22 @@ if strcmpi(rawData,'y')
         % Reshape into a Npts x Ncoils x Naverages x Nrepetitions array
         fids_raw=reshape(fids_raw,rawDataPoints,Nrcvrs,rawAverages,rawRepetitions);
         %Permute so that time is along 1st dimension, averages is along 2nd 
-        %dimension, and coils is along 3rd dimension:
-        fids_raw=permute(fids_raw,[1,3,2,4]); 
-
-    elseif contains(version,'PV 5') && multiRcvrs
-        % PV 5 does not appear to store individual coil channels in the
-        % job0 file, but still preserves individual transients
-
-        % Reshape into a Npts x Naverages x Nrepetitions array
-        fids_raw=reshape(fids_raw,rawDataPoints,rawAverages,rawRepetitions);
+        %dimension, and coils is along 3rd dimension, repetitions along 4th dimension:
+        fids_raw=permute(fids_raw,[1,3,2,4]);
 
     elseif ~contains(version,'PV 5') && ~multiRcvrs
         % Found a dataset with only one receiver and one repetition
         fids_raw=reshape(fids_raw,rawDataPoints,rawAverages,rawRepetitions);
 
+    elseif contains(version,'PV 5') % && multiRcvrs
+        % PV 5 does not appear to store individual coil channels in the
+        % job0 file, but still preserves individual transients
+
+        % Reshape into a Npts x Naverages x Nrepetitions array
+        fids_raw=reshape(fids_raw,rawDataPoints,rawAverages,rawRepetitions);
     end
+
+
 
     % Remove singletons
     fids_raw = squeeze(fids_raw);
@@ -419,13 +431,13 @@ else
     error('ERROR:  rawData variable not recognized.  Options are ''y'' or ''n''.');
 end
 
-
-%Perform left-shifting to remove points before the echo
-fids_trunc=fids_raw(leftshift+1:end,:,:,:);
-
-%replace the left-shifted points with zeros at the end
-fids=padarray(fids_trunc, [leftshift,0],'post');
-
+% Removed: we will perform leftshift in compMRS_DPproc - Thanh 20260101
+% %Perform left-shifting to remove points before the echo
+% fids_trunc=fids_raw(leftshift+1:end,:,:,:);
+% 
+% %replace the left-shifted points with zeros at the end
+% fids=padarray(fids_trunc, [leftshift,0],'post');
+fids=fids_raw;
 sz=size(fids); %size of the array
 
 %calculate the dwelltime:
@@ -440,10 +452,10 @@ f=[fmax:-2*fmax/(rawDataPoints-1):-fmax];
 ppm=f/(txfrq/1e6)+centerfreq;
 
 % Apply ref freq shift (the difference between txfrq and txfrq_ref)
-if contains(version, ["PV-360"]) || (contains(version, ["PV 6.0.1", "PV-7"]) && strcmpi(rawData,'y'))
-    tmat=repmat(t',[1 sz(2:end)]);
-    fids=fids.*exp(-1i*tmat*(txfrq_ref-txfrq)*2*pi);
-end
+% if contains(version, ["PV-360"]) || (contains(version, ["PV 6", "PV-7"]) && strcmpi(rawData,'y'))
+%     tmat=repmat(t',[1 sz(2:end)]);
+%     fids=fids.*exp(-1i*tmat*(txfrq_ref-txfrq)*2*pi);
+% end
 
 %Do the fourier transform
 specs=fftshift(ifft(fids,[],1),1);
@@ -459,7 +471,7 @@ if ~contains(version,'PV 5') && multiRcvrs && strcmpi(rawData,'y')
     %Coils dimension should normally be after the averages dimension,
     %unless there are no averages, in which case the coils dimension will
     %be after the time dimension.  
-    if rawAverages==1 && rawRepetitions==1
+    if rawAverages==1 % && rawRepetitions==1
         dims.coils=2;
     elseif rawAverages>1
         dims.coils=3;
@@ -471,12 +483,21 @@ else
 end
 
 if strcmpi(rawData,'y')
-    dims.averages=2;
+    if rawAverages>1
+        dims.averages=2;
+    else
+        dims.averages=0;
+    end
     if rawRepetitions>1
-        dims.subSpecs=4;
+        if rawAverages>1
+            dims.subSpecs=4;
+        else
+            dims.subSpecs=3;
+        end
     else
         dims.subSpecs=0;
     end
+
 elseif strcmpi(rawData,'n')
     dims.averages=0;
     if rawRepetitions>1
@@ -492,6 +513,7 @@ subspecs=rawRepetitions;
 rawSubspecs=rawRepetitions;
 
 
+
 %% NOW TRY LOADING IN THE RAW REFERENCE SCAN DATA (IF IT EXISTS)
 % Added by Thanh 18.04.2025, read the RefScan from method file
 
@@ -501,10 +523,10 @@ if rawData == 'y'
 	% This will only work for PV 6 and above 
     if (isfield(headerMethod, 'PVM_RefScanYN') && headerMethod.PVM_RefScanYN=='Yes' && isfield(headerMethod, 'PVM_RefScan'))
         isRef=true;
-        fids_ref=headerMethod.PVM_RefScan;
-        real_ref = fids_ref(1:2:length(fids_ref));
-        imag_ref = fids_ref(2:2:length(fids_ref));
-        fids_ref=complex(real_ref, imag_ref);
+        reffids=headerMethod.PVM_RefScan;
+        real_ref = reffids(1:2:length(reffids));
+        imag_ref = reffids(2:2:length(reffids));
+        reffids=complex(real_ref, imag_ref);
 
         % Find the number of averages that were acquired
         if isfield(headerMethod, 'PVM_RefScanNA')
@@ -516,18 +538,20 @@ if rawData == 'y'
         % The data stored are already averaged.
         averages_ref=1;
         ref.flags.averaged=1;
-            
-        fids_ref=reshape(fids_ref,[], Nrcvrs);
-        fids_ref_trunc=fids_ref(leftshift+1:end,:,:);
-        reffids=padarray(fids_ref_trunc, [leftshift,0],'post');
-    
+
+        reffids=reshape(reffids,[], Nrcvrs);
+
+        % Removed: we will perform leftshift in compMRS_DPproc - Thanh 20260101
+        % reffids_trunc=reffids(leftshift+1:end,:,:);
+        % reffids=padarray(reffids_trunc, [leftshift,0],'post');
+
         % Apply ref freq shift (the difference between txfrq and txfrq_ref)
         % (but not if it's PV360)
-        sz_ref=size(fids_ref); %size of the array
-        if ~contains(version, ["PV-360"])
-            tmat=repmat(t',[1 sz_ref(2:end)]);
-            reffids=reffids.*exp(-1i*tmat*(txfrq_ref-txfrq)*2*pi);
-        end
+        sz_ref=size(reffids); %size of the array
+        % if ~contains(version, ["PV-360"])
+        %     tmat=repmat(t',[1 sz_ref(2:end)]);
+        %     reffids=reffids.*exp(-1i*tmat*(txfrq_ref-txfrq)*2*pi);
+        % end
     
         refspecs=fftshift(ifft(reffids,[],1),1);
     
@@ -545,7 +569,7 @@ if rawData == 'y'
         refdims.extras=0;
     
         %Specify the number of subspecs. For ref data, I think these are always
-        %1
+        %1 (as the data are already averaged).
         subspecs_ref=1;
         rawSubspecs_ref=1;
     end
@@ -566,13 +590,13 @@ if ~isRef || rawData == 'n'
     if isRef
     	if contains(version, ["PV 5"])
     		fileRef     = fullfile(inDir, 'fid.refscan');
-            fids_ref    = compMRS_readBrukerRaw(fileRef, 'int'); % Note: never tested for PV5 as we don't have datasets available
+            reffids    = compMRS_readBrukerRaw(fileRef, 'int'); % Note: never tested for PV5 as we don't have datasets available
         elseif contains(version, ["PV 6", "PV 7", "PV-7", "PV-360.1", "PV-360.2"])
             fileRef     = fullfile(inDir, 'fid.refscan');
-            fids_ref    = compMRS_readBrukerRaw(fileRef, 'int32');
+            reffids    = compMRS_readBrukerRaw(fileRef, 'int32');
         elseif contains(version,'PV-360.3')
             fileRef     = fullfile(inDir, 'pdata', '1', 'fid_refscan.64');
-            fids_ref    = compMRS_readBrukerRaw(fileRef, 'float64');
+            reffids    = compMRS_readBrukerRaw(fileRef, 'float64');
         end
     	
     	% The reference scan stored will be already combined and averaged
@@ -585,17 +609,18 @@ if ~isRef || rawData == 'n'
         	rawAverages_ref=1;
        	end
     
-        fids_ref=reshape(fids_ref,[],averages_ref);
-        fids_ref_trunc=fids_ref(leftshift+1:end,:);
-        reffids=padarray(fids_ref_trunc, [leftshift,0],'post');
-    
+        reffids=reshape(reffids,[],averages_ref);
+        % Removed: we will perform leftshift in compMRS_DPproc - Thanh 20260101
+        % reffids_trunc=reffids(leftshift+1:end,:);
+        % reffids=padarray(reffids_trunc, [leftshift,0],'post');
+        % 
         % Apply ref freq shift (the difference between txfrq and txfrq_ref)
         % (but not if it's PV360)
-        sz_ref=size(fids_ref); %size of the array
-        if ~contains(version, ["PV-360"])
-            tmat=repmat(t',[1 sz_ref(2:end)]);
-            reffids=reffids.*exp(-1i*tmat*(txfrq_ref-txfrq)*2*pi);
-        end
+        sz_ref=size(reffids); %size of the array
+        % if ~contains(version, ["PV-360"])
+        %     tmat=repmat(t',[1 sz_ref(2:end)]);
+        %     reffids=reffids.*exp(-1i*tmat*(txfrq_ref-txfrq)*2*pi);
+        % end
     
         refspecs=fftshift(ifft(reffids,[],1),1);
     
@@ -644,10 +669,12 @@ elseif contains(version, ["PV 6", "PV 7", "PV-7", "PV-360"])
     	isNav=true;
     	data = fopen(fullfile(inDir, 'rawdata.job1'));
         fids_nav=fread(data,'int32');
+        fclose(data);
     elseif exist(fullfile(inDir, 'rawdata.Navigator'));
     	isNav=true;
     	data = fopen(fullfile(inDir, 'rawdata.Navigator'));
         fids_nav=fread(data,'int32');
+        fclose(data);
     end
     
     % From the PV 6 manual: rawdata.job1: Contains serially stored FIDs of
@@ -666,13 +693,14 @@ if isNav
     end
 
     %Find the number of averages in the ref dataset:
-    rawAverages_nav=rawAverages;
+    rawAverages_nav=rawAverages*rawRepetitions;
     averages_nav=rawAverages_nav;
     
     if contains(version,'PV 5')
-        fids_nav=reshape(fids_nav,[],rawAverages_nav);
-        fids_nav_trunc=fids_nav(leftshift+1:end,:);
-        navfids=padarray(fids_nav_trunc, [leftshift,0],'post');
+        navfids=reshape(fids_nav,[],rawAverages_nav);
+        % Removed: we will perform leftshift in compMRS_DPproc - Thanh 20260101
+        % fids_nav_trunc=fids_nav(leftshift+1:end,:);
+        % navfids=padarray(fids_nav_trunc, [leftshift,0],'post');
     else
         navfids=reshape(fids_nav,headerMethod.PVM_NavPoints,Nrcvrs, rawAverages, rawRepetitions);
         %Permute so that time is along 1st dimension, averages is along 2nd 
@@ -704,20 +732,13 @@ if isNav
     ppm_nav=f/(txfrq/1e6)+centerfreq;
     
     % Apply ref freq shift (the difference between txfrq and txfrq_ref)
-    if contains(version, ["PV-360"]) || (contains(version, ["PV 6", "PV-7"]) && strcmpi(rawData,'y'))
-        tmat_nav=repmat(t_nav',[1 length_nav(2:end)]);
-        navfids=navfids.*exp(-1i*tmat_nav*(txfrq_ref-txfrq)*2*pi);
-    end
+    % if ~contains(version, ["PV-360"]) || (contains(version, ["PV 6", "PV-7"]) && strcmpi(rawData,'y'))
+    %     tmat_nav=repmat(t_nav',[1 length_nav(2:end)]);
+    %     navfids=navfids.*exp(-1i*tmat_nav*(txfrq_ref-txfrq)*2*pi);
+    % end
     
     %Do the fourier transform
     specs_nav=fftshift(ifft(navfids,[],1),1);
-
-%     % Apply ref freq shift (the difference between txfrq and txfrq_ref)
-%     % (but not if it's PV360)
-%     if ~contains(version, ["PV-360"])
-%         tmat=repmat(t',[1 sz(2:end)]);
-%         navfids=navfids.*exp(-1i*tmat*(txfrq_ref-txfrq)*2*pi);
-%     end
 
     nav.flags.averaged=0;
     %specify the dims
@@ -737,6 +758,38 @@ else
     disp('WARNING NAVIGATOR SCANS NOT FOUND.  RETURNING EMPTY NAV STRUCTURE.');
 end
 
+
+% Handle data where repetitions are used instead of averages, we'll need to
+% swap both dimensions
+if rawAverages==1 && rawRepetitions > 1
+    dims.averages = dims.subSpecs;
+    dims.subSpecs = 0;
+    rawAverages = rawRepetitions;
+    rawRepetitions = 1;
+    
+    % handle subspecs parameter
+    % if length(size(fids_raw))==3
+    %     fids_raw = permute(fids_raw, [1 3 2]);
+    % elseif length(size(fids_raw))==4
+    %     fids_raw = permute(fids_raw, [1 4 3 2]);
+    % end
+    
+end
+
+% Handle SPECIAL acquisitions; split the ISIS on/off into two subspecs and averages.
+if strcmp(sequence, 'SPECIAL') && (dims.subSpecs==0) % Here we checked that it was not already split into subspecs.
+    % We need to arrange the data into subspecs
+    
+    fids = cat(4, fids(:, :, 1:2:end,: ), fids(:, :, 2:2:end, :));
+    specs=fftshift(ifft(fids,[],1),1);
+    rawRepetitions=2;
+    averages = size(fids, 3);
+    dims.subSpecs = 4;
+    sz = size(fids);
+end
+
+
+out.flags.averaged=(rawAverages==1); %make the flags structure
 %FILLING IN DATA STRUCTURE FOR THE RAW DATA
 out.fids=fids;
 out.specs=specs;
@@ -749,6 +802,7 @@ out.txfrq=txfrq;
 out.date=date;
 out.dims=dims;
 out.Bo=Bo;
+out.centerfreq=centerfreq;
 out.averages=averages;
 out.rawAverages=rawAverages;
 out.subspecs=subspecs;
@@ -756,7 +810,7 @@ out.rawSubspecs=rawSubspecs;
 out.seq=sequence;
 out.te=te;
 out.tr=tr;
-out.pointsToLeftshift=0;
+out.pointsToLeftshift=leftshift;
 out.version=version;
 out.filepath=fileRaw;
 
@@ -764,7 +818,7 @@ out.filepath=fileRaw;
 %FILLING IN THE FLAGS FOR THE RAW DATA
 out.flags.writtentostruct=1;
 out.flags.gotparams=1;
-out.flags.leftshifted=1;
+out.flags.leftshifted=0;
 out.flags.filtered=0;
 out.flags.zeropadded=0;
 out.flags.freqcorrected=0;
@@ -808,7 +862,7 @@ if isRef
     ref.seq=sequence;
     ref.te=te;
     ref.tr=tr;
-    ref.pointsToLeftshift=0;
+    ref.pointsToLeftshift=leftshift;
     ref.version=version;
     % DGR added file path to FID-A structure; 
     % when no separate water scan is acquired (a reference scan)
@@ -823,7 +877,7 @@ if isRef
     %FILLING IN THE FLAGS FOR THE REF DATA
     ref.flags.writtentostruct=1;
     ref.flags.gotparams=1;
-    ref.flags.leftshifted=1;
+    ref.flags.leftshifted=0;
     ref.flags.filtered=0;
     ref.flags.zeropadded=0;
     ref.flags.freqcorrected=0;
@@ -869,13 +923,13 @@ if isNav
     nav.seq=sequence;
     nav.te=te;
     nav.tr=tr;
-    nav.pointsToLeftshift=0;
+    nav.pointsToLeftshift=leftshift;
     nav.version=version;
     
     %FILLING IN THE FLAGS FOR THE NAV DATA
     nav.flags.writtentostruct=1;
     nav.flags.gotparams=1;
-    nav.flags.leftshifted=1;
+    nav.flags.leftshifted=0;
     nav.flags.filtered=0;
     nav.flags.zeropadded=0;
     nav.flags.freqcorrected=0;
@@ -941,6 +995,7 @@ out.nav=nav;
 out.coilcombos=coilcombos;
 out.isECCed=isECCed;
 out.isRFLed=isRFLed;
+
 end
 
 % THE FUNCTION BELOW WAS COMMENTED OUT AS A SEPARATE FUNCTION FILE NAMED
