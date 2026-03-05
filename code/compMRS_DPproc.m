@@ -40,7 +40,7 @@ if ~exist('opt','var')
     opt.tmaxin              = 0.2;
     opt.aaDomain            = 'f';
     opt.autophase           = 1;
-    opt.compFracGroupDelay=1;
+    opt.compFracGroupDelay  = 1;
 end
 
 
@@ -87,10 +87,19 @@ end
 end
 
 function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, opt)
-    
     ls = in_mn.pointsToLeftshift;
     frac_ls = ls-floor(ls);
+
+    % Thanh 20260305 - Override lsfid for certain Varian data packets as the
+    % procpar file does not contain the right lsfid value to achieve proper phasing
     
+    if contains(ident, 'DP12') || contains(ident, 'DP13')
+        ls = 0;
+    elseif contains(ident, 'DP29')
+        ls = 1;
+    end
+
+    % Left-shift both the MRS and reference scan.
     out_mn = op_leftshift_keepSize(in_mn, floor(ls));
     outw_mn= op_leftshift_keepSize(inw_mn, floor(ls));
 
@@ -199,9 +208,12 @@ function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, opt)
         % Compute the quality metrics
         % Get LW (of NAA) and SNR
         
+        %out_part_avg=op_addphase(out_part_avg, -in_mn.rp, -(in_mn.lp/360.0*in_mn.dwelltime), max(in_mn.ppm), 1);  % for debug: rephase Varian data with parameters in procpar file
+
         if opt.autophase
-            out_part_avg = op_autophase(out_part_avg, 2.8, 3.2);
+            out_part_avg = op_autophase(out_part_avg, 1.8, 2.2);
         end
+
         [FWHM_NAA] = op_getLW(out_part_avg, 1.8, 2.2, 8, 1);
         [SNR]=op_getSNR(out_part_avg,1.8,2.2,-2, 0, 1);
         
