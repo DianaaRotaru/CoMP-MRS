@@ -40,7 +40,7 @@ if ~exist('opt','var')
     opt.tmaxin              = 0.2;
     opt.aaDomain            = 'f';
     opt.autophase           = 1;
-    opt.compFracGroupDelay=1;
+    opt.compFracGroupDelay  = 1;
 end
 
 
@@ -71,11 +71,11 @@ end
                 % If separate water scan is available
                 if ~isempty(inw) && ~isempty(inw{m, n})
                     
-                    [out{m}{n}, outw{m}{n}] = compMRS_DPproc_sub(in{m, n}, inw{m, n}, [ident  '_sepWater'], opt);
+                    [out{m}{n}, outw{m}{n}] = compMRS_DPproc_sub(in{m, n}, inw{m, n}, [ident  '_sepWater'], check, opt);
                 end
                 % If automatic water scan is available
                 if autoWaterExists && ~isempty(inw_auto{m, n})
-                    [out_auto{m}{n}, outw_auto{m}{n}] = compMRS_DPproc_sub(in{m, n}, inw_auto{m, n}, [ident  '_autoWater'], opt);
+                    [out_auto{m}{n}, outw_auto{m}{n}] = compMRS_DPproc_sub(in{m, n}, inw_auto{m, n}, [ident  '_autoWater'], check, opt);
                 end
             end
         end
@@ -86,16 +86,35 @@ end
 
 end
 
-function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, opt)
-    
+function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, check, opt)
     ls = in_mn.pointsToLeftshift;
     frac_ls = ls-floor(ls);
+
+    % Thanh 20260305 - Override lsfid for certain Varian data packets as the
+    % procpar file does not contain the right lsfid value to achieve proper phasing
     
+    if contains(ident, 'DP12') || contains(ident, 'DP13')
+        ls = 0;
+    elseif contains(ident, 'DP29')
+        ls = 1;
+    end
+
+    % Left-shift both the MRS and reference scan.
     out_mn = op_leftshift_keepSize(in_mn, floor(ls));
     outw_mn= op_leftshift_keepSize(inw_mn, floor(ls));
 
     % Average the water
     outw_mn=op_averaging(outw_mn);
+
+    % On some Varian DPs/subjects, the the reference/working frequency is different
+    % between the metabolite and reference scan and it does not seem to be intentional.
+    % We try to shift the water scan such that it matches the metabolite scan.
+    if strcmp(check.vendor(1),'VARIAN')
+        diff_freq = out_mn.txfrq - outw_mn.txfrq;
+        if abs(diff_freq) > 20 % Hz
+            outw_mn=op_freqshift(outw_mn,diff_freq);
+        end
+    end
 
     % do ECC before averaging (yes/no)
     if opt.doECCbeforeAvg
@@ -124,15 +143,15 @@ function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, opt)
         %Now apply the weights to both the water unsuppressed and water suppressed
         %data, combine the coils, but don't combine the averages:
         
-        out_mn=op_addrcvrs(out_mn,2,'h',coilcombos_to_apply);
-        outw_mn=op_addrcvrs(outw_mn,2,'h',coilcombos_to_apply);
+        out_mn  = op_addrcvrs(out_mn,2,'h',coilcombos_to_apply);
+        outw_mn = op_addrcvrs(outw_mn,2,'h',coilcombos_to_apply);
  
         % Perform some scaling for Bruker, if applicable
         % In PV 360 the channels are averaged, this should be done in case
         % we need to compare to already combined ref scans.
         if contains(in_mn.version, ["PV 360", "PV-360"])
             % divide by number of channels to achieve averaging
-            out_mn = op_ampScale(out_mn, 1.0/length(coilcombos_to_apply.ph));
+            out_mn  = op_ampScale(out_mn, 1.0/length(coilcombos_to_apply.ph));
             outw_mn = op_ampScale(outw_mn, 1.0/length(coilcombos_to_apply.ph));
         end
     end
@@ -199,9 +218,12 @@ function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, opt)
         % Compute the quality metrics
         % Get LW (of NAA) and SNR
         
+        %out_part_avg=op_addphase(out_part_avg, -in_mn.rp, -(in_mn.lp/360.0*in_mn.dwelltime), max(in_mn.ppm), 1);  % for debug: rephase Varian data with parameters in procpar file
+
         if opt.autophase
-            out_part_avg = op_autophase(out_part_avg, 2.8, 3.2);
+            out_part_avg = op_autophase(out_part_avg, 1.8, 2.2);
         end
+
         [FWHM_NAA] = op_getLW(out_part_avg, 1.8, 2.2, 8, 1);
         [SNR]=op_getSNR(out_part_avg,1.8,2.2,-2, 0, 1);
         

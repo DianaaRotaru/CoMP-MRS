@@ -48,7 +48,7 @@ f=[(-in.spectralwidth/2)+(in.spectralwidth/(2*sz(1))):...
     (in.spectralwidth/2)-(in.spectralwidth/(2*sz(1)))];
 
 ppm=-f/(in.Bo*42.577);
-ppm=ppm+4.65;
+ppm=ppm+0.5*(in.ppm(1) + in.ppm(end)); % Thanh 20260305 - changed because the spectrum may not be centered around 4.65 ppm
 
 t=[0:in.dwelltime:(sz(1)-1)*in.dwelltime];
 

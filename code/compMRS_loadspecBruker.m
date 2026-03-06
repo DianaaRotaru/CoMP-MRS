@@ -776,6 +776,21 @@ if rawAverages==1 && rawRepetitions > 1
     
 end
 
+% Handle data where there are both averages and repetitions, we'll put
+% everything as averages
+
+if rawAverages>1 && rawRepetitions > 1
+    dims.subSpecs = 0;
+    rawAverages = rawAverages * rawRepetitions;
+    tmpfids = permute( fids , [1 2 4 3]);
+    fids=reshape(tmpfids, size(tmpfids, 1), rawAverages, size(tmpfids, 4));
+    subspecs = 1;
+    rawSubspecs = 1;
+    averages = size(fids, dims.averages);
+    sz = size(fids);
+    
+end
+
 % Handle SPECIAL acquisitions; split the ISIS on/off into two subspecs and averages.
 if strcmp(sequence, 'SPECIAL') && (dims.subSpecs==0) % Here we checked that it was not already split into subspecs.
     % We need to arrange the data into subspecs
@@ -787,7 +802,6 @@ if strcmp(sequence, 'SPECIAL') && (dims.subSpecs==0) % Here we checked that it w
     dims.subSpecs = 4;
     sz = size(fids);
 end
-
 
 out.flags.averaged=(rawAverages==1); %make the flags structure
 %FILLING IN DATA STRUCTURE FOR THE RAW DATA
