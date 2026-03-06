@@ -124,6 +124,13 @@ while ~feof(fid)
                     % In this case, let's look for recurring parentheses
                     % again:
                     multiLine = erase(multiLine, newline); % remove new line characters
+                    
+                    % For some parameters (for example the reference scan),
+                    % we need to "uncompress" the data
+
+                    multiLine = replacePattern(multiLine);
+
+
                     [tokensParentheses, ~] = regexp(multiLine,'\(([^\)]+)\)','tokens','match');
 
                     if ~isempty(tokensParentheses)
@@ -200,5 +207,22 @@ while ~feof(fid)
 end
 
 fclose(fid);
+
+end
+
+function out = replacePattern(str)
+
+expr = '@(\d+)\*\((\d+)\)';
+tokens = regexp(str, expr, 'tokens');
+matches = regexp(str, expr, 'match');
+
+out = str;
+
+for k = 1:numel(matches)
+    count = str2double(tokens{k}{1});
+    value = tokens{k}{2};
+    replacement = strjoin(repmat({value}, 1, count), ' ');
+    out = strrep(out, matches{k}, replacement);
+end
 
 end

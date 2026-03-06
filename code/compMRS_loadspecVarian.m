@@ -271,6 +271,8 @@ sz=size(fids);
 if isa(fids,'int32')
     fids=double(fids);
 end
+
+fids=conj(fids); % 20260304 Thanh - conjugate the fids such that the spectrum is oriented in the same direction as for Bruker.
 specs=fftshift(ifft(fids,[],dims.t),dims.t);
 
 %Now get relevant scan parameters:*****************************
@@ -314,7 +316,7 @@ end
 
 %Calculate t and ppm arrays using the calculated parameters:
 f=[(-spectralwidth/2)+(spectralwidth/(2*sz(1))):spectralwidth/(sz(1)):(spectralwidth/2)-(spectralwidth/(2*sz(1)))];
-ppm=f/(txfrq/1e6);
+ppm=-f/(txfrq/1e6); % 20260304 Thanh - minus sign to have the ppmscale in descending order as for the Bruker loader
 ppm=ppm+4.65;
 
 t=[0:dwelltime:(sz(1)-1)*dwelltime];
@@ -339,8 +341,10 @@ out.Bo=out.txfrq/42.577/1e6;
 out.seq=sequence;
 out.te=te;
 out.tr=tr;
-out.pointsToLeftshift=0;
+out.pointsToLeftshift=par.lsfid;
 out.filepath=filename;
+out.rp=par.rp; % zero order phase from vnmrj
+out.lp=par.lp; % first order phase from vnmrj
 
 %FILLING IN THE FLAGS
 out.flags.writtentostruct=1;
