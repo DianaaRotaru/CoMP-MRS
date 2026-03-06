@@ -106,6 +106,14 @@ function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, opt)
     % Average the water
     outw_mn=op_averaging(outw_mn);
 
+    % On some DPs, the reference/working frequency is different
+    % between the metabolite and reference scan. We try to shift the water scan
+    % such that it matches the metabolite scan.
+    diff_freq = out_mn.txfrq - outw_mn.txfrq;
+    if abs(diff_freq) > 20 % Hz
+        outw_mn=op_freqshift(outw_mn,diff_freq);
+    end
+
     % do ECC before averaging (yes/no)
     if opt.doECCbeforeAvg
         [out_mn, outw_mn]=op_eccKlose(out_mn, outw_mn);
@@ -133,15 +141,15 @@ function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, opt)
         %Now apply the weights to both the water unsuppressed and water suppressed
         %data, combine the coils, but don't combine the averages:
         
-        out_mn=op_addrcvrs(out_mn,2,'h',coilcombos_to_apply);
-        outw_mn=op_addrcvrs(outw_mn,2,'h',coilcombos_to_apply);
+        out_mn  = op_addrcvrs(out_mn,2,'h',coilcombos_to_apply);
+        outw_mn = op_addrcvrs(outw_mn,2,'h',coilcombos_to_apply);
  
         % Perform some scaling for Bruker, if applicable
         % In PV 360 the channels are averaged, this should be done in case
         % we need to compare to already combined ref scans.
         if contains(in_mn.version, ["PV 360", "PV-360"])
             % divide by number of channels to achieve averaging
-            out_mn = op_ampScale(out_mn, 1.0/length(coilcombos_to_apply.ph));
+            out_mn  = op_ampScale(out_mn, 1.0/length(coilcombos_to_apply.ph));
             outw_mn = op_ampScale(outw_mn, 1.0/length(coilcombos_to_apply.ph));
         end
     end
