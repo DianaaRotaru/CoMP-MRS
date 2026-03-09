@@ -87,8 +87,10 @@ end
 end
 
 function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, check, opt)
+
+    % Get number of points to be left-shifted
     ls = in_mn.pointsToLeftshift;
-    frac_ls = ls-floor(ls);
+    frac_ls = ls-floor(ls); % On Bruker datasets, this number is not an integer. The fractional part should be corrected as a 1st order phase.
 
     % Thanh 20260305 - Override lsfid for certain Varian data packets as the
     % procpar file does not contain the right lsfid value to achieve proper phasing
@@ -109,7 +111,8 @@ function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, check, opt)
     % On some Varian DPs/subjects, the the reference/working frequency is different
     % between the metabolite and reference scan and it does not seem to be intentional.
     % We try to shift the water scan such that it matches the metabolite scan.
-    if strcmp(check.vendor(1),'VARIAN')
+    % This correction is only performed on DP32
+    if strcmp(check.vendor(1),'VARIAN') && contains(ident, 'DP32')
         diff_freq = out_mn.txfrq - outw_mn.txfrq;
         if abs(diff_freq) > 20 % Hz
             outw_mn=op_freqshift(outw_mn,diff_freq);
@@ -158,7 +161,7 @@ function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, check, opt)
 
     
 
-    % Combine subspectra for SPECIAL
+    % Combine subspectra for SPECIAL, if applicable
     
     if strcmp(out_mn.seq, 'SPECIAL') && out_mn.dims.subSpecs>0
         out_mn=op_combinesubspecs(out_mn,"diff");
@@ -195,9 +198,6 @@ function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, check, opt)
         out_part_avg = op_blockAvg(out_mn,av_block_sizes(kk));
         
         % do drift correction (if applicable) (code from Jamie)
-
-        
-        
         if opt.doDriftCorrection
             out_part_avg = subDriftCorrection(out_part_avg, ident, opt);
         end
@@ -210,20 +210,23 @@ function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, check, opt)
             [out_part_avg, ~]=op_eccKlose(out_part_avg, outw_mn);
         end
         
-        
+        % 1st order phase correction to compensate for fractional group
+        % delay on Bruker datasets.
         if opt.compFracGroupDelay && abs(frac_ls)>0.00001
             ph1 = -frac_ls*in_mn.dwelltime;
             out_part_avg=op_addphase(out_part_avg, 0, ph1, out_part_avg.centerfreq, 1);
         end
-        % Compute the quality metrics
-        % Get LW (of NAA) and SNR
         
-        %out_part_avg=op_addphase(out_part_avg, -in_mn.rp, -(in_mn.lp/360.0*in_mn.dwelltime), max(in_mn.ppm), 1);  % for debug: rephase Varian data with parameters in procpar file
+        % for debug: rephase Varian data with parameters in procpar file
+        %out_part_avg=op_addphase(out_part_avg, -in_mn.rp, -(in_mn.lp/360.0*in_mn.dwelltime), max(in_mn.ppm), 1);  
 
+        % Final phasing (0-order phase)
         if opt.autophase
             out_part_avg = op_autophase(out_part_avg, 1.8, 2.2);
         end
-
+        
+        % Compute the quality metrics
+        % Get LW (of NAA) and SNR
         [FWHM_NAA] = op_getLW(out_part_avg, 1.8, 2.2, 8, 1);
         [SNR]=op_getSNR(out_part_avg,1.8,2.2,-2, 0, 1);
         
@@ -270,8 +273,8 @@ function [out, outw] = compMRS_DPproc_sub(in_mn, inw_mn, ident, check, opt)
         plot(out_all{ii}.ppm, real(out_all{ii}.specs))
     end
     legend(plotlegend)
-    saveas(f, ['plots/' ident], 'fig')
-    print(f, ['plots/' ident], '-dpng', '-r300');
+    saveas(f, ['plots' filesep ident], 'fig')
+    print(f, ['plots' filesep ident], '-dpng', '-r300');
 
 end
 
