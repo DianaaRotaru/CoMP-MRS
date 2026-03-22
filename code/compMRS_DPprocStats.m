@@ -19,13 +19,22 @@
 % out = excel file containing processing statistics
 
 clear; clc;
-cd('A:\CoMP-MRS\Data')
+% dir_name = mfilename("fullpath");
+% dir_name = fileparts(fileparts(dir_name));
+% data_dir = fullfile(dir_name,'data','supplementary');
+% 
+% %% File names
+% xlsxFile = fullfile(data_dir,'CoMP-MRS_participantSpreadsheet.xlsx');
+% matFile  = fullfile(data_dir,'CoMP-MRS.mat');
+% siteFile = fullfile(data_dir,'CoMP-MRS-sites.xlsx');
+% outCsv   = fullfile(data_dir,'CoMP_MRS_Rstats_input_v1.csv');
 
+cd('A:\CoMP-MRS\Data\data\supplementary')
 %% File names
 xlsxFile = 'CoMP-MRS_participantSpreadsheet.xlsx';
 matFile  = 'CoMP-MRS.mat';
 siteFile = 'CoMP-MRS-sites.xlsx';
-outCsv   = 'CoMP_MRS_subject_level_output.csv';
+outCsv   = 'CoMP_MRS_Rstats_input_v1.csv';
 
 
 %% Exceptions
