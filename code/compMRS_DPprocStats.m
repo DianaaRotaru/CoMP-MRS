@@ -22,7 +22,7 @@ clear; clc;
 % dir_name = mfilename("fullpath");
 % dir_name = fileparts(fileparts(dir_name));
 % data_dir = fullfile(dir_name,'data','supplementary');
-% 
+%
 % %% File names
 % xlsxFile = fullfile(data_dir,'CoMP-MRS_participantSpreadsheet.xlsx');
 % matFile  = fullfile(data_dir,'CoMP-MRS.mat');
@@ -36,10 +36,9 @@ matFile  = 'CoMP-MRS.mat';
 siteFile = 'CoMP-MRS-sites.xlsx';
 outCsv   = 'CoMP_MRS_Rstats_input_v1.csv';
 
-
 %% Exceptions
 % DP05-sub-02 corrupted data
-% DP07-sub-01 rejected due to distortions; SNR/LW ~ 0.3; 
+% DP07-sub-01 rejected due to distortions; SNR/LW ~ 0.3;
 % DP16-sub-02 corrupted data
 % DP17-sub01, sub-04 discard due to poor quality
 % DP21-sub-01 discard due to distortions near NAA
@@ -57,7 +56,7 @@ outCsv   = 'CoMP_MRS_Rstats_input_v1.csv';
 % DP09-sub06 SNR/LW ~ 0.4 and x8-10 smaller than other ratios; sub-08 SNR/LW ~ 0.7 and x6-8 smaller than other ratios;
 % DP13-sub03, sub-04 - high lactate
 % DP14-all high lactate
-% DP17-sub01 L-hippocampus, all others R-hipocampus
+% DP17-sub01 L-hippocampus, all others R-hippocampus
 % DP18-sub-02 no weight
 % DP19-all different voxel size
 % DP20-all high lactate
@@ -82,12 +81,20 @@ fullTable = readtable(xlsxFile, opts);
 % Extract selected columns
 %% ------------------------------------------------------------------------
 % in 'CoMP-MRS_participantSpreadsheet.xlsx'
-% 1 = data.packet.ID; 3 = animal.ID; 6 = animal.species
-% 9 = animal.ses-01.age; 11 = animal.sex; 12 = animal.ses-01.weight
-% 28 = MRI.vendor; 29 = MRI.field.strength;
-% 35 = MRS.pulse.sequence; 36 = MRS.brain.region; 37 = MRS.VoI.size;
+% 1  = data.packet.ID
+% 3  = animal.ID
+% 6  = animal.species
+% 7  = animal.strain
+% 9  = animal.ses-01.age
+% 11 = animal.sex
+% 12 = animal.ses-01.weight
+% 28 = MRI.vendor
+% 29 = MRI.field.strength
+% 35 = MRS.pulse.sequence
+% 36 = MRS.brain.region
+% 37 = MRS.VoI.size
 % 44 = MRS.n.ave
-selectedCols = [1 3 6 9 11 12 28 29 35 36 37 44];
+selectedCols = [1 3 6 7 9 11 12 28 29 35 36 37 44];
 selectedData = fullTable(:, selectedCols);
 
 %% ------------------------------------------------------------------------
@@ -149,22 +156,25 @@ end
 
 %% ------------------------------------------------------------------------
 % Build participant table
+% NOTE:
+% Pull by original spreadsheet column number, not by position in selectedData.
 %% ------------------------------------------------------------------------
 participantTable = table();
 
-participantTable.PacketID      = selectedData{:,1};
-participantTable.AnimalID      = string(selectedData{:,2});
-participantTable.AnimalSpecies = selectedData{:,3};
-participantTable.AnimalAge     = selectedData{:,4};
-participantTable.AnimalSex     = selectedData{:,5};
-participantTable.AnimalWeight  = selectedData{:,6};
+participantTable.PacketID      = local_get_selected_column(selectedData, selectedCols, 1);
+participantTable.AnimalID      = string(local_get_selected_column(selectedData, selectedCols, 3));
+participantTable.AnimalSpecies = local_get_selected_column(selectedData, selectedCols, 6);
+participantTable.AnimalStrain  = local_get_selected_column(selectedData, selectedCols, 7);
+participantTable.AnimalAge     = local_get_selected_column(selectedData, selectedCols, 9);
+participantTable.AnimalSex     = local_get_selected_column(selectedData, selectedCols, 11);
+participantTable.AnimalWeight  = local_get_selected_column(selectedData, selectedCols, 12);
 
-participantTable.MRvendor      = selectedData{:,7};
-participantTable.MRfield       = selectedData{:,8};
-participantTable.MRsequence    = selectedData{:,9};
-participantTable.MRbrainregion = selectedData{:,10};
-participantTable.VoISize       = selectedData{:,11};
-participantTable.MRaverages    = selectedData{:,12};
+participantTable.MRvendor      = local_get_selected_column(selectedData, selectedCols, 28);
+participantTable.MRfield       = local_get_selected_column(selectedData, selectedCols, 29);
+participantTable.MRsequence    = local_get_selected_column(selectedData, selectedCols, 35);
+participantTable.MRbrainregion = local_get_selected_column(selectedData, selectedCols, 36);
+participantTable.VoISize       = local_get_selected_column(selectedData, selectedCols, 37);
+participantTable.MRaverages    = local_get_selected_column(selectedData, selectedCols, 44);
 
 %% ------------------------------------------------------------------------
 % Standardize MRbrainregion names
@@ -214,7 +224,7 @@ participantTable = addvars(participantTable, VoISizeProduct, ...
 %% ------------------------------------------------------------------------
 % Load MAT file
 %% ------------------------------------------------------------------------
-% in case the DP does not have a separate water scan, then the aut_auto and
+% in case the DP does not have a separate water scan, then the out_auto and
 % outw_auto variables should be used to extract LW, SNR, etc.
 matData = load(matFile);
 
@@ -262,7 +272,7 @@ for i = 1:nRows
 
         if subjNum <= size(dpCell,1)
             subjEntry = dpCell{subjNum,1};
-            candidateStruct = subjEntry{1,1};
+            candidateStruct = local_extract_struct(subjEntry);
 
             if isstruct(candidateStruct)
                 metricStruct = candidateStruct;
@@ -297,7 +307,7 @@ for i = 1:nRows
 
             if subjNum <= size(dpCell_auto,1)
                 subjEntry_auto = dpCell_auto{subjNum,1};
-                candidateStruct_auto = subjEntry_auto{1,1};
+                candidateStruct_auto = local_extract_struct(subjEntry_auto);
 
                 if isstruct(candidateStruct_auto)
                     if isnan(lw_val) && isfield(candidateStruct_auto,'LW') && ~isempty(candidateStruct_auto.LW)
@@ -416,3 +426,45 @@ disp(outCsv)
 
 disp(head(participantTable))
 
+%% ------------------------------------------------------------------------
+% Local functions
+%% ------------------------------------------------------------------------
+function col = local_get_selected_column(selectedData, selectedCols, originalColNumber)
+idx = find(selectedCols == originalColNumber, 1);
+
+if isempty(idx)
+    error('Requested original column %d is not present in selectedCols.', originalColNumber);
+end
+
+col = selectedData{:, idx};
+end
+
+function s = local_extract_struct(entry)
+s = [];
+
+if isstruct(entry)
+    s = entry;
+    return
+end
+
+if iscell(entry)
+    if isempty(entry)
+        return
+    end
+
+    firstVal = entry{1};
+
+    if isstruct(firstVal)
+        s = firstVal;
+        return
+    end
+
+    if iscell(firstVal) && ~isempty(firstVal)
+        innerVal = firstVal{1};
+        if isstruct(innerVal)
+            s = innerVal;
+            return
+        end
+    end
+end
+end
