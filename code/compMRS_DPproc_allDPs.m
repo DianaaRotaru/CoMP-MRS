@@ -29,8 +29,15 @@ function [out, outw, out_auto, outw_auto]=compMRS_DPproc_allDPs()
     res = dir('DP*');
     
     % run compMRS_DPproc on all DPs
-    
+    out         = cell(1,length(res));
+    outw        = cell(1,length(res));
+    out_auto    = cell(1,length(res));
+    outw_auto   = cell(1,length(res));
     for ii=1:length(res)
+        try
         [out{ii}, outw{ii}, out_auto{ii}, outw_auto{ii}]=compMRS_DPproc(res(ii).name);
+        catch 
+            disp([res(ii).name ' error'])
+        end
     end
 end
