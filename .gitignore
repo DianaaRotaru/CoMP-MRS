@@ -1,5 +1,4 @@
 .DS_Store
-\data
 *.*asv
 stats/ProcSpectralQuality/.R*
 stats/ProcSpectralQuality/cheatsheets
