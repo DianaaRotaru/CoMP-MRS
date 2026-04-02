@@ -348,7 +348,7 @@ STATS$all <- list(
 )
 
 
-### Save descriptive stats tables -----------------------------------------------
+# Save descriptive stats tables -----------------------------------------------
 
 if (save_csv) {
   
@@ -418,8 +418,7 @@ if (save_csv) {
 }
 
 
-# Pie charts ------------------------------------------------------------------
-### Pie chart function --------------------------------------------------------
+# Pie chart function ----------------------------------------------------------
 
 pie_dir <- file.path(plots_dir, "piecharts")
 dir.create(pie_dir, recursive = TRUE, showWarnings = FALSE)
@@ -541,7 +540,7 @@ make_pie_chart <- function(data, var, plot_title = NULL, file_name = NULL, outpu
 }
 
 
-### Create pie charts with percentages ----------------------------------------
+# Create pie charts with percentages ------------------------------------------
 
 pie_specs <- list(
   list(var = "SiteID",         title = "Site (#DPs)"),
@@ -568,7 +567,7 @@ pie_plots <- lapply(pie_specs, function(x) {
 names(pie_plots) <- sapply(pie_specs, `[[`, "var")
 
 
-### Combined preview of pie charts --------------------------------------------
+# Combined preview of pie charts ----------------------------------------------
 
 combined_pies <- patchwork::wrap_plots(pie_plots, ncol = 3)
 ggsave(
@@ -581,7 +580,7 @@ ggsave(
 )
 
 
-### 3D pie chart function -----------------------------------------------------
+# 3D pie chart function -------------------------------------------------------
 
 # Source - https://stackoverflow.com/a/76142219
 # Posted by Stéphane Laurent
@@ -609,7 +608,7 @@ make_pie_data_amcharts <- function(data, var) {
 }
 
 
-### Create 3D pie charts with percentages -------------------------------------
+# Create 3D pie charts with percentages --------------------------------------
 
 if (show_amcharts) {
   
@@ -676,71 +675,82 @@ if (show_amcharts) {
   }
   
 }
-# Dot plots -------------------------------------------------------------------
 
-### Common theme for plots ----------------------------------------------------
+
+# Plot options -----------------------------------------------------------
+
+# Common theme
 theme_comp <- function() {
-  theme_classic() +
+  theme_classic2() +
     theme(
       plot.title = element_text(
         face = "bold",
         size = 16,
         hjust = 0.5,
         color = "black",
-        fontface = "bold",
-        family = "serif"
+        family = "Arial"
       ),
       axis.title = element_text(
         face = "bold",
         size = 13,
         color = "black",
-        family = "serif"
+        family = "Arial"
       ),
       axis.text = element_text(
         size = 11,
         color = "black",
-        family = "serif"
+        family = "Arial"
       ),
       strip.text = element_text(
         face = "bold",
         size = 12,
         color = "black",
-        family = "serif"
+        family = "Arial"
       ),
       legend.position = "none",
-      axis.line = element_line(color = "black", linewidth = 0.4),
-      axis.ticks = element_line(color = "black", linewidth = 0.4),
+      axis.line = element_line(
+        color = "black",
+        linewidth = 0.4,
+        lineend = "square"
+      ),
+      axis.ticks = element_line(
+        color = "black",
+        linewidth = 0.4
+      ),
       panel.spacing = unit(1, "lines")
     )
 }
 
-### Dot plot function ---------------------------------------------------------
+# Dynamic color function for any number of groups
+get_discrete_colors <- function(n) {
+  if (n == 1) {
+    return(c("#4C77C2")) # blue
+  } else if (n == 2) {
+    return(c("#4C77C2", "#EA7E2D")) # blue and orange
+  } else if (n > 2 && n <= 8) {
+    return(RColorBrewer::brewer.pal(n, "Set2"))
+  } else {
+    return(grDevices::hcl.colors(n, palette = "Dynamic"))
+  }
+}
+
+
+# Dot plot function ------------------------------------------------------
+
 make_dot_plot <- function(data, x_var, y_var, y_label, group_var, file_name) {
   
   every_nth <- function(n) {
     function(x) x[seq(1, length(x), by = n)]
   }
   
-  plot_data <- data %>%
-    dplyr::filter(
-      !is.na(.data[[x_var]]),
-      !is.na(.data[[y_var]]),
-      !is.na(.data[[group_var]])
-    ) %>%
-    dplyr::arrange(.data[[group_var]], .data[[x_var]]) %>%
-    dplyr::mutate(
-      !!x_var := factor(.data[[x_var]], levels = unique(.data[[x_var]]))
-    )
+  data <- data %>%
+    arrange(.data[[group_var]], .data[[x_var]]) %>%
+    mutate(!!x_var := factor(.data[[x_var]], levels = unique(.data[[x_var]])))
   
-  p <- ggplot(
-    plot_data,
-    aes(
-      x = .data[[x_var]],
-      y = .data[[y_var]],
-      color = factor(.data[[group_var]])
-    )
-  ) +
-    geom_point(size = 1) +
+  p <- ggplot(data, aes(x = .data[[x_var]], y = .data[[y_var]], color = factor(.data[[group_var]]))) +
+    geom_point(
+      size = 1
+    ) +
     labs(
       title = paste(y_label, "by", x_var),
       x = x_var,
@@ -748,12 +758,10 @@ make_dot_plot <- function(data, x_var, y_var, y_label, group_var, file_name) {
       color = group_var
     ) +
     scale_x_discrete(
-      breaks = every_nth(10)
+      breaks = every_nth(10) # Show every 10th label on x-axis
     ) +
     theme_comp() +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1)
-    )
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
   
   print(p)
   
@@ -769,273 +777,11 @@ make_dot_plot <- function(data, x_var, y_var, y_label, group_var, file_name) {
   return(p)
 }
 
-### Create dot plots ----------------------------------------------------------
-dotplot_orig <- make_dot_plot(
-  data = DATA_orig,
-  x_var = "CompID",
-  y_var = "SNR_LW_Ratio_norm",
-  y_label = "Normalized SNR/LW ratio before outliers removal",
-  group_var = "DP",
-  file_name = "dotplot_SNR_LW_Ratio_norm_by_Subj_orig.png"
-)
 
-dotplot <- make_dot_plot(
-  data = DATA,
-  x_var = "CompID",
-  y_var = "SNR_LW_Ratio_norm",
-  y_label = "Normalized SNR/LW ratio after outliers removal",
-  group_var = "DP",
-  file_name = "dotplot_SNR_LW_Ratio_norm_by_Subj.png"
-)
+# Violin plots function -------------------------------------------------------
 
-# DP & SiteID boxplots --------------------------------------------------------------------
-
-# Common theme for boxplots
-theme_comp <- function() {
-  theme_classic() +
-    theme(
-      plot.title = element_text(
-        face = "bold",
-        size = 16,
-        hjust = 0.5,
-        color = "black",
-        family = "serif"
-      ),
-      axis.title = element_text(
-        face = "bold",
-        size = 13,
-        color = "black",
-        family = "serif"
-      ),
-      axis.text = element_text(
-        size = 11,
-        color = "black",
-        family = "serif"
-      ),
-      strip.text = element_text(
-        face = "bold",
-        size = 12,
-        color = "black",
-        family = "serif"
-      ),
-      legend.position = "none",
-      axis.line = element_line(color = "black", linewidth = 0.4),
-      axis.ticks = element_line(color = "black", linewidth = 0.4),
-      panel.spacing = unit(1, "lines")
-    )
-}
-
-
-p_dp <- ggplot(DATA, aes(x = DP, y = SNR_LW_Ratio_norm)) +
-  geom_boxplot(
-    width = 0.65,
-    fill = "#EA7E2D",
-    alpha = 0.9,
-    outlier.shape = 21,
-    outlier.size = 1.8,
-    outlier.stroke = 0.3,
-    color = "black",
-    linewidth = 0.4
-  ) +
-  geom_jitter(
-    width = 0.12,
-    alpha = 0.3,
-    size = 1.2,
-    color = "black"
-  ) +
-  labs(
-    title = "Normalized SNR/LW ratio by DP",
-    x = "DP",
-    y = "Normalized SNR/LW ratio"
-  ) +
-  theme_comp() +
-  theme(
-    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
-  )
-
-print(p_dp)
-
-ggsave(
-  file.path(plots_dir, "boxplot_SNR_LW_Ratio_norm_by_DP.png"),
-  plot = p_dp,
-  width = 11,
-  height = 5,
-  units = "in",
-  dpi = 300
-)
-
-p_site <- ggplot(DATA, aes(x = SiteID, y = SNR_LW_Ratio_norm)) +
-  geom_boxplot(
-    width = 0.65,
-    fill = "#4C77C2",
-    alpha = 0.9,
-    outlier.shape = 21,
-    outlier.size = 1.8,
-    outlier.stroke = 0.3,
-    color = "black",
-    linewidth = 0.4
-  ) +
-  geom_jitter(
-    width = 0.12,
-    alpha = 0.35,
-    size = 1.4,
-    color = "black"
-  ) +
-  labs(
-    title = "Normalized SNR/LW ratio by site",
-    x = "Site",
-    y = "Normalized SNR/LW ratio"
-  ) +
-  theme_comp() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  )
-
-print(p_site)
-
-ggsave(
-  file.path(plots_dir, "boxplot_SNR_LW_Ratio_norm_by_SiteID.png"),
-  plot = p_site,
-  width = 8,
-  height = 5,
-  units = "in",
-  dpi = 300
-)
-
-# Plots -----------------------------------------------------------------------
-
-# Common theme ----------------------------------------------------------------
-
-theme_comp <- function() {
-  theme_classic() +
-    theme(
-      plot.title = element_text(
-        face = "bold",
-        size = 16,
-        hjust = 0.5,
-        color = "black",
-        family = "serif"
-      ),
-      axis.title = element_text(
-        face = "bold",
-        size = 13,
-        color = "black",
-        family = "serif"
-      ),
-      axis.text = element_text(
-        size = 11,
-        color = "black",
-        family = "serif"
-      ),
-      strip.text = element_text(
-        face = "bold",
-        size = 12,
-        color = "black",
-        family = "serif"
-      ),
-      legend.position = "none",
-      axis.line = element_line(color = "black", linewidth = 0.4),
-      axis.ticks = element_line(color = "black", linewidth = 0.4),
-      panel.spacing = unit(1, "lines")
-    )
-}
-
-# Blue/orange-only palette ----------------------------------------------------
-
-get_discrete_colors <- function(n) {
-  base_colors <- c("#4C77C2", "#EA7E2D")
-  if (n == 1) {
-    return(base_colors[1])
-  } else {
-    return(rep(base_colors, length.out = n))
-  }
-}
-
-
-# Dot plots -------------------------------------------------------------------
-
-make_dot_plot <- function(data, x_var, y_var, y_label, group_var, file_name,
-                          width = 7, height = 5) {
-  
-  every_nth <- function(n) {
-    function(x) x[seq(1, length(x), by = n)]
-  }
-  
-  plot_data <- data %>%
-    dplyr::filter(
-      !is.na(.data[[x_var]]),
-      !is.na(.data[[y_var]]),
-      !is.na(.data[[group_var]])
-    ) %>%
-    dplyr::arrange(.data[[group_var]], .data[[x_var]]) %>%
-    dplyr::mutate(
-      !!x_var := factor(.data[[x_var]], levels = unique(.data[[x_var]]))
-    )
-  
-  p <- ggplot(
-    plot_data,
-    aes(
-      x = .data[[x_var]],
-      y = .data[[y_var]],
-      color = factor(.data[[group_var]])
-    )
-  ) +
-    geom_point(size = 1) +
-    labs(
-      title = paste(y_label, "by", x_var),
-      x = x_var,
-      y = y_label,
-      color = group_var
-    ) +
-    scale_x_discrete(
-      breaks = every_nth(10)
-    ) +
-    scale_color_manual(
-      values = get_discrete_colors(nlevels(factor(plot_data[[group_var]])))
-    ) +
-    theme_comp() +
-    theme(
-      legend.position = "right",
-      axis.text.x = element_text(angle = 45, hjust = 1)
-    )
-  
-  print(p)
-  
-  ggsave(
-    filename = file.path(plots_dir, file_name),
-    plot = p,
-    width = width,
-    height = height,
-    units = "in",
-    dpi = 300
-  )
-  
-  return(p)
-}
-
-# Create dot plots
-dotplot_orig <- make_dot_plot(
-  data = DATA_orig,
-  x_var = "CompID",
-  y_var = "SNR_LW_Ratio_norm",
-  y_label = "Normalized SNR/LW ratio before outlier removal",
-  group_var = "DP",
-  file_name = "dotplot_SNR_LW_Ratio_norm_by_Subj_orig.png"
-)
-
-dotplot <- make_dot_plot(
-  data = DATA,
-  x_var = "CompID",
-  y_var = "SNR_LW_Ratio_norm",
-  y_label = "Normalized SNR/LW ratio after outlier removal",
-  group_var = "DP",
-  file_name = "dotplot_SNR_LW_Ratio_norm_by_Subj.png"
-)
-
-
-# Standard boxplots -----------------------------------------------------------
-
-make_boxplot <- function(data, x_var, y_var, y_label, file_name, level_subset = NULL) {
+# General violin plot function
+make_violin_plot <- function(data, x_var, y_var, y_label, file_name, level_subset = NULL) {
   
   plot_data <- data %>%
     dplyr::filter(!is.na(.data[[x_var]]), !is.na(.data[[y_var]])) %>%
@@ -1043,52 +789,63 @@ make_boxplot <- function(data, x_var, y_var, y_label, file_name, level_subset = 
       x_group = as.factor(.data[[x_var]])
     )
   
+  # Optional subset of levels for crowded variables
   if (!is.null(level_subset)) {
     plot_data <- plot_data %>%
       dplyr::filter(x_group %in% level_subset) %>%
-      dplyr::mutate(
-        x_group = factor(x_group, levels = level_subset)
-      )
+      dplyr::mutate(x_group = factor(x_group, levels = level_subset))
   }
   
   n_groups <- nlevels(plot_data$x_group)
+  fill_colors <- get_discrete_colors(n_groups)
   
- {
-    p <- ggplot(plot_data, aes(x = x_group, y = .data[[y_var]], fill = x_group)) +
-      geom_boxplot(
-        width = 0.65,
-        alpha = 0.9,
-        outlier.shape = 21,
-        outlier.size = 1.8,
-        outlier.stroke = 0.3,
-        color = "black",
-        linewidth = 0.4
-      ) +
-      geom_jitter(
-        width = 0.12,
-        alpha = 0.35,
-        size = 1.4,
-        color = "black"
-      ) +
-      labs(
-        title = paste(y_label, "by", x_var),
-        x = x_var,
-        y = y_label
-      ) +
-      scale_fill_manual(
-        values = get_discrete_colors(n_groups),
-        na.translate = FALSE
-      ) +
-      theme_comp()
-    
-    if (n_groups > 4) {
-      p <- p + theme(
-        axis.text.x = element_text(angle = 45, hjust = 1)
-      )
-    }
-    
-    plot_width <- if (n_groups > 10) 10 else 7
+  p <- ggplot(plot_data, aes(x = x_group, y = .data[[y_var]], fill = x_group)) +
+    # geom_violin(
+    #   position = position_dodge(0),
+    #   width = 1,
+    #   trim = FALSE,
+    #   alpha = 0.8,
+    #   linewidth = 0.25,
+    #   color = "black") +
+    geom_boxplot(
+      width = 0.65,
+      # fill = "#EA7E2D",
+      alpha = 0.9,
+      outlier.shape = 21,
+      outlier.size = 1.8,
+      outlier.stroke = 0.3,
+      color = "black",
+      linewidth = 0.4
+    ) +
+    geom_jitter(
+      width = 0.12,
+      alpha = 0.3,
+      size = 1.2,
+      color = "black"
+    ) +
+    geom_point(
+      size = 1
+    ) +
+    labs(
+      title = paste(y_label, "by", x_var),
+      x = x_var,
+      y = y_label
+    ) +
+    scale_fill_manual(
+      values = fill_colors,
+      na.translate = FALSE
+    ) +
+    theme_comp()
+  
+  # Rotate labels for crowded x-axes
+  if (nlevels(plot_data$x_group) > 4) {
+    p <- p + theme(
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
   }
+  
+  # Make wider plots for many categories
+  plot_width <- if (nlevels(plot_data$x_group) > 10) 10 else 7
   
   print(p)
   
@@ -1104,13 +861,39 @@ make_boxplot <- function(data, x_var, y_var, y_label, file_name, level_subset = 
   return(p)
 }
 
-# Specs
-y_specs <- list(
-  #list(var = "LW_norm",             label = "Normalized LW"),
-  #list(var = "SNR_norm",            label = "Normalized SNR"),
-  #list(var = "SNR_LW_Product_norm", label = "Normalized SNR×LW product"),
-  list(var = "SNR_LW_Ratio_norm",   label = "Normalized SNR/LW ratio")
+
+# Create plots ----------------------------------------------------------------
+
+### Dot plots -----------------------------------------------------------------
+
+dotplot_orig <- make_dot_plot(
+  data = DATA_orig,   # use DATA here instead if you want row-level plots
+  x_var = "CompID",
+  y_var = "SNR_LW_Ratio_norm",
+  y_label = "Normalized SNR/LW ratio",
+  group_var = "DP",
+  file_name = "dotplot_SNR_LW_Ratio_norm_by_Subj_orig.png"
 )
+
+dotplot <- make_dot_plot(
+  data = DATA,   # use DATA here instead if you want row-level plots
+  x_var = "CompID",
+  y_var = "SNR_LW_Ratio_norm",
+  y_label = "Normalized SNR/LW ratio",
+  group_var = "DP",
+  file_name = "dotplot_SNR_LW_Ratio_norm_by_Subj.png"
+)
+
+### Y variables (measured) ----------------------------------------------------
+
+y_specs <- list(
+  # list(var = "LW_norm",             label = "Normalized LW"),
+  # list(var = "SNR_norm",            label = "Normalized SNR"),
+  # list(var = "SNR_LW_Product_norm", label = "Normalized SNR×LW"),
+  list(var = "SNR_LW_Ratio_norm",   label = "Normalized SNR/LW")
+)
+
+### X variables (grouping factors) --------------------------------------------
 
 x_vars <- c(
   "DP",
@@ -1123,27 +906,75 @@ x_vars <- c(
   "MRbrainregion"
 )
 
-# Create standard boxplots
-all_boxplots <- list()
+### Violin plots --------------------------------------------------------------
+
+all_violin_plots <- list()
 
 for (y in y_specs) {
   for (x in x_vars) {
     
-    file_name <- paste0("boxplot_", y$var, "_by_", x, ".png")
-    key <- paste(y$var, x, sep = "_by_")
-    
-    all_boxplots[[key]] <- make_boxplot(
-      data = DATA_DP,
-      x_var = x,
-      y_var = y$var,
-      y_label = y$label,
-      file_name = file_name
-    )
+    # Special handling for crowded variables: split into two plots
+    if (x %in% c("DP")) {
+      
+      all_levels <- DATA_DP %>%
+        dplyr::filter(!is.na(.data[[x]])) %>%
+        dplyr::pull(.data[[x]]) %>%
+        unique() %>%
+        as.character() %>%
+        sort()
+      
+      split_index <- ceiling(length(all_levels) / 2)
+      levels_part1 <- all_levels[1:split_index]
+      levels_part2 <- all_levels[(split_index + 1):length(all_levels)]
+      
+      # First half
+      file_name_1 <- paste0("violinplot_", y$var, "_by_", x, "_part1.png")
+      key_1 <- paste(y$var, x, "part1", sep = "_by_")
+      
+      all_violin_plots[[key_1]] <- make_violin_plot(
+        data = DATA_DP,
+        x_var = x,
+        y_var = y$var,
+        y_label = paste0(y$label, " (", x, " 1)"),
+        file_name = file_name_1,
+        level_subset = levels_part1
+      )
+      
+      # Second half
+      if (length(levels_part2) > 0) {
+        file_name_2 <- paste0("violinplot_", y$var, "_by_", x, "_part2.png")
+        key_2 <- paste(y$var, x, "part2", sep = "_by_")
+        
+        all_violin_plots[[key_2]] <- make_violin_plot(
+          data = DATA_DP,
+          x_var = x,
+          y_var = y$var,
+          y_label = paste0(y$label, " (", x, " 2)"),
+          file_name = file_name_2,
+          level_subset = levels_part2
+        )
+      }
+      
+    } else {
+      
+      file_name <- paste0("violinplot_", y$var, "_by_", x, ".png")
+      key <- paste(y$var, x, sep = "_by_")
+      
+      all_violin_plots[[key]] <- make_violin_plot(
+        data = DATA_DP,
+        x_var = x,
+        y_var = y$var,
+        y_label = y$label,
+        file_name = file_name
+      )
+    }
   }
 }
 
+### Double variable boxplots: MRvendor and AnimalSpecies ----------------------
 
-# Faceted boxplots ------------------------------------------------------------
+# This will create boxplots of each y variable, faceted by MRvendor and AnimalSpecies
+# You can modify the function to facet by other combinations of variables if desired
 
 make_boxplot_vendor_species <- function(data, y_var, y_label, file_name) {
   
@@ -1159,6 +990,13 @@ make_boxplot_vendor_species <- function(data, y_var, y_label, file_name) {
     )
   
   p <- ggplot(plot_data, aes(x = MRvendor, y = .data[[y_var]], fill = MRvendor)) +
+    geom_violin(
+      position = position_dodge(0),
+      width = 1,
+      trim = FALSE,
+      alpha = 0.8,
+      linewidth = 0.25,
+      color = "black") +
     geom_boxplot(
       width = 0.65,
       alpha = 0.9,
@@ -1174,13 +1012,16 @@ make_boxplot_vendor_species <- function(data, y_var, y_label, file_name) {
       size = 1.6,
       color = "black"
     ) +
+    geom_point(
+      size = 1
+    ) +
     facet_wrap(~ AnimalSpecies, scales = "free_x") +
     labs(
       title = paste(y_label, "by vendor and animal species"),
       x = "Vendor",
       y = y_label
     ) +
-    scale_fill_manual(values = get_discrete_colors(nlevels(plot_data$MRvendor))) +
+    scale_fill_brewer(palette = "Set2", na.translate = FALSE) +
     theme_comp()
   
   print(p)
@@ -1224,7 +1065,7 @@ if (show_facet_plots) {
   
   facet_plots <- lapply(facet_specs, function(x) {
     make_boxplot_vendor_species(
-      data = DATA_DP,
+      data = DATA_DP,   # use DATA here instead if you want row-level plots
       y_var = x$var,
       y_label = x$label,
       file_name = x$file
@@ -1232,6 +1073,7 @@ if (show_facet_plots) {
   })
   
   names(facet_plots) <- sapply(facet_specs, `[[`, "var")
+  
 }
 
 

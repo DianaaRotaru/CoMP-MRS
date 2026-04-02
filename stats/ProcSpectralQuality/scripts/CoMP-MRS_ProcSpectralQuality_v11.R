@@ -902,48 +902,24 @@ ggsave(
   dpi = 300
 )
 
-# Plots -----------------------------------------------------------------------
+# Standard boxplots -----------------------------------------------------------
 
-# Common theme ----------------------------------------------------------------
-
-theme_comp <- function() {
-  theme_classic() +
-    theme(
-      plot.title = element_text(
-        face = "bold",
-        size = 16,
-        hjust = 0.5,
-        color = "black",
-        family = "serif"
-      ),
-      axis.title = element_text(
-        face = "bold",
-        size = 13,
-        color = "black",
-        family = "serif"
-      ),
-      axis.text = element_text(
-        size = 11,
-        color = "black",
-        family = "serif"
-      ),
-      strip.text = element_text(
-        face = "bold",
-        size = 12,
-        color = "black",
-        family = "serif"
-      ),
-      legend.position = "none",
-      axis.line = element_line(color = "black", linewidth = 0.4),
-      axis.ticks = element_line(color = "black", linewidth = 0.4),
-      panel.spacing = unit(1, "lines")
-    )
-}
-
-# Blue/orange-only palette ----------------------------------------------------
+# Dynamic color function for any number of groups
+# get_discrete_colors <- function(n) {
+#   if (n == 1) {
+#     c("#4C77C2")
+#   } else if (n == 2) {
+#     c("#4C77C2", "#EA7E2D")
+#   } else if (n > 2 && n <= 8) {
+#     RColorBrewer::brewer.pal(n, "Set2")
+#   } else {
+#     grDevices::hcl.colors(n, palette = "Dynamic")
+#   }
+# }
 
 get_discrete_colors <- function(n) {
-  base_colors <- c("#4C77C2", "#EA7E2D")
+  base_colors <- c("#4C77C2", "#EA7E2D")  # blue, orange
+  
   if (n == 1) {
     return(base_colors[1])
   } else {
@@ -951,90 +927,7 @@ get_discrete_colors <- function(n) {
   }
 }
 
-
-# Dot plots -------------------------------------------------------------------
-
-make_dot_plot <- function(data, x_var, y_var, y_label, group_var, file_name,
-                          width = 7, height = 5) {
-  
-  every_nth <- function(n) {
-    function(x) x[seq(1, length(x), by = n)]
-  }
-  
-  plot_data <- data %>%
-    dplyr::filter(
-      !is.na(.data[[x_var]]),
-      !is.na(.data[[y_var]]),
-      !is.na(.data[[group_var]])
-    ) %>%
-    dplyr::arrange(.data[[group_var]], .data[[x_var]]) %>%
-    dplyr::mutate(
-      !!x_var := factor(.data[[x_var]], levels = unique(.data[[x_var]]))
-    )
-  
-  p <- ggplot(
-    plot_data,
-    aes(
-      x = .data[[x_var]],
-      y = .data[[y_var]],
-      color = factor(.data[[group_var]])
-    )
-  ) +
-    geom_point(size = 1) +
-    labs(
-      title = paste(y_label, "by", x_var),
-      x = x_var,
-      y = y_label,
-      color = group_var
-    ) +
-    scale_x_discrete(
-      breaks = every_nth(10)
-    ) +
-    scale_color_manual(
-      values = get_discrete_colors(nlevels(factor(plot_data[[group_var]])))
-    ) +
-    theme_comp() +
-    theme(
-      legend.position = "right",
-      axis.text.x = element_text(angle = 45, hjust = 1)
-    )
-  
-  print(p)
-  
-  ggsave(
-    filename = file.path(plots_dir, file_name),
-    plot = p,
-    width = width,
-    height = height,
-    units = "in",
-    dpi = 300
-  )
-  
-  return(p)
-}
-
-# Create dot plots
-dotplot_orig <- make_dot_plot(
-  data = DATA_orig,
-  x_var = "CompID",
-  y_var = "SNR_LW_Ratio_norm",
-  y_label = "Normalized SNR/LW ratio before outlier removal",
-  group_var = "DP",
-  file_name = "dotplot_SNR_LW_Ratio_norm_by_Subj_orig.png"
-)
-
-dotplot <- make_dot_plot(
-  data = DATA,
-  x_var = "CompID",
-  y_var = "SNR_LW_Ratio_norm",
-  y_label = "Normalized SNR/LW ratio after outlier removal",
-  group_var = "DP",
-  file_name = "dotplot_SNR_LW_Ratio_norm_by_Subj.png"
-)
-
-
-# Standard boxplots -----------------------------------------------------------
-
+# General boxplot function
 make_boxplot <- function(data, x_var, y_var, y_label, file_name, level_subset = NULL) {
   
   plot_data <- data %>%
@@ -1046,14 +939,101 @@ make_boxplot <- function(data, x_var, y_var, y_label, file_name, level_subset = 
   if (!is.null(level_subset)) {
     plot_data <- plot_data %>%
       dplyr::filter(x_group %in% level_subset) %>%
-      dplyr::mutate(
-        x_group = factor(x_group, levels = level_subset)
-      )
+      dplyr::mutate(x_group = factor(x_group, levels = level_subset))
   }
   
   n_groups <- nlevels(plot_data$x_group)
   
- {
+  if (x_var == "MRvendor") {
+    p <- ggplot(plot_data, aes(x = x_group, y = .data[[y_var]], fill = x_group)) +
+      geom_boxplot(
+        width = 0.65,
+        alpha = 0.9,
+        outlier.shape = 21,
+        outlier.size = 2.2,
+        outlier.stroke = 0.3,
+        color = "black",
+        linewidth = 0.4
+      ) +
+      geom_jitter(
+        width = 0.12,
+        alpha = 0.45,
+        size = 1.8,
+        color = "black"
+      ) +
+      labs(
+        title = paste(y_label, "by vendor"),
+        x = "Vendor",
+        y = y_label
+      ) +
+      scale_fill_brewer(palette = "Set2") +
+      theme_comp()
+    
+    plot_width <- 6
+    
+  } else if (x_var == "SiteID") {
+    p <- ggplot(plot_data, aes(x = x_group, y = .data[[y_var]])) +
+      geom_boxplot(
+        width = 0.65,
+        fill = "#4C77C2",
+        alpha = 0.9,
+        outlier.shape = 21,
+        outlier.size = 1.8,
+        outlier.stroke = 0.3,
+        color = "black",
+        linewidth = 0.4
+      ) +
+      geom_jitter(
+        width = 0.12,
+        alpha = 0.35,
+        size = 1.4,
+        color = "black"
+      ) +
+      labs(
+        title = paste(y_label, "by site"),
+        x = "Site",
+        y = y_label
+      ) +
+      theme_comp() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1)
+      )
+    
+    plot_width <- 8
+    
+  } else if (x_var == "DPs") {
+    p <- ggplot(plot_data, aes(x = x_group, y = .data[[y_var]])) +
+      geom_boxplot(
+        width = 0.65,
+        fill = "#EA7E2D",
+        alpha = 0.9,
+        outlier.shape = 21,
+        outlier.size = 1.8,
+        outlier.stroke = 0.3,
+        color = "black",
+        linewidth = 0.4
+      ) +
+      geom_jitter(
+        width = 0.12,
+        alpha = 0.3,
+        size = 1.2,
+        color = "black"
+      ) +
+      labs(
+        title = paste(y_label, "by DP"),
+        x = "DP",
+        y = y_label
+      ) +
+      theme_comp() +
+      theme(
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+      )
+    
+    plot_width <- 11
+    
+  } else {
+    fill_colors <- get_discrete_colors(n_groups)
+    
     p <- ggplot(plot_data, aes(x = x_group, y = .data[[y_var]], fill = x_group)) +
       geom_boxplot(
         width = 0.65,
@@ -1076,7 +1056,7 @@ make_boxplot <- function(data, x_var, y_var, y_label, file_name, level_subset = 
         y = y_label
       ) +
       scale_fill_manual(
-        values = get_discrete_colors(n_groups),
+        values = fill_colors,
         na.translate = FALSE
       ) +
       theme_comp()
@@ -1104,11 +1084,11 @@ make_boxplot <- function(data, x_var, y_var, y_label, file_name, level_subset = 
   return(p)
 }
 
-# Specs
+# Boxplot specs
 y_specs <- list(
-  #list(var = "LW_norm",             label = "Normalized LW"),
-  #list(var = "SNR_norm",            label = "Normalized SNR"),
-  #list(var = "SNR_LW_Product_norm", label = "Normalized SNR×LW product"),
+  list(var = "LW_norm",             label = "Normalized LW"),
+  list(var = "SNR_norm",            label = "Normalized SNR"),
+  list(var = "SNR_LW_Product_norm", label = "Normalized SNR×LW product"),
   list(var = "SNR_LW_Ratio_norm",   label = "Normalized SNR/LW ratio")
 )
 
@@ -1129,22 +1109,64 @@ all_boxplots <- list()
 for (y in y_specs) {
   for (x in x_vars) {
     
-    file_name <- paste0("boxplot_", y$var, "_by_", x, ".png")
-    key <- paste(y$var, x, sep = "_by_")
-    
-    all_boxplots[[key]] <- make_boxplot(
-      data = DATA_DP,
-      x_var = x,
-      y_var = y$var,
-      y_label = y$label,
-      file_name = file_name
-    )
+    # if (x %in% c("DP", "SiteID")) {
+    #   
+    #   all_levels <- DATA_DP %>%
+    #     dplyr::filter(!is.na(.data[[x]])) %>%
+    #     dplyr::pull(.data[[x]]) %>%
+    #     unique() %>%
+    #     as.character() %>%
+    #     sort()
+    #   
+    #   split_index <- ceiling(length(all_levels) / 2)
+    #   levels_part1 <- all_levels[1:split_index]
+    #   levels_part2 <- all_levels[(split_index + 1):length(all_levels)]
+    #   
+    #   file_name_1 <- paste0("boxplot_", y$var, "_by_", x, "_part1.png")
+    #   key_1 <- paste(y$var, x, "part1", sep = "_by_")
+    #   
+    #   all_boxplots[[key_1]] <- make_boxplot(
+    #     data = DATA_DP,
+    #     x_var = x,
+    #     y_var = y$var,
+    #     y_label = y$label,
+    #     file_name = file_name_1,
+    #     level_subset = levels_part1
+    #   )
+    #   
+    #   if (length(levels_part2) > 0) {
+    #     file_name_2 <- paste0("boxplot_", y$var, "_by_", x, "_part2.png")
+    #     key_2 <- paste(y$var, x, "part2", sep = "_by_")
+    #     
+    #     all_boxplots[[key_2]] <- make_boxplot(
+    #       data = DATA_DP,
+    #       x_var = x,
+    #       y_var = y$var,
+    #       y_label = y$label,
+    #       file_name = file_name_2,
+    #       level_subset = levels_part2
+    #     )
+    #   }
+    #   
+    # } else {
+      
+      file_name <- paste0("boxplot_", y$var, "_by_", x, ".png")
+      key <- paste(y$var, x, sep = "_by_")
+      
+      all_boxplots[[key]] <- make_boxplot(
+        data = DATA_DP,
+        x_var = x,
+        y_var = y$var,
+        y_label = y$label,
+        file_name = file_name
+      )
+    #}
   }
 }
 
-
 # Faceted boxplots ------------------------------------------------------------
 
+# Faceted boxplot function
 make_boxplot_vendor_species <- function(data, y_var, y_label, file_name) {
   
   plot_data <- data %>%
@@ -1180,7 +1202,7 @@ make_boxplot_vendor_species <- function(data, y_var, y_label, file_name) {
       x = "Vendor",
       y = y_label
     ) +
-    scale_fill_manual(values = get_discrete_colors(nlevels(plot_data$MRvendor))) +
+    scale_fill_brewer(palette = "Set2") +
     theme_comp()
   
   print(p)
@@ -1197,6 +1219,7 @@ make_boxplot_vendor_species <- function(data, y_var, y_label, file_name) {
   return(p)
 }
 
+# Optional faceted boxplots
 if (show_facet_plots) {
   
   facet_specs <- list(
