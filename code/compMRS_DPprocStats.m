@@ -34,7 +34,7 @@ cd('A:\CoMP-MRS\Data\data\supplementary')
 xlsxFile = 'CoMP-MRS_participantSpreadsheet.xlsx';
 matFile  = 'CoMP-MRS.mat';
 siteFile = 'CoMP-MRS-sites.xlsx';
-outCsv   = 'CoMP_MRS_Rstats_input_v1.csv';
+outCsv   = 'CoMP_MRS_Rstats_input.csv';
 
 %% Exceptions
 % DP05-sub-02 corrupted data
@@ -177,10 +177,25 @@ participantTable.VoISize       = local_get_selected_column(selectedData, selecte
 participantTable.MRaverages    = local_get_selected_column(selectedData, selectedCols, 44);
 
 %% ------------------------------------------------------------------------
-% Standardize MRbrainregion names
+% Add extra fields from fullTable by header name
+%% ------------------------------------------------------------------------
+participantTable.MRsoftwareversion = local_get_fulltable_column(fullTable, "MRI.software.version");
+participantTable.MRcoildetail      = local_get_fulltable_column(fullTable, "MRI.coil.detail");
+participantTable.MRSsw             = local_get_fulltable_column(fullTable, "MRS.sw");
+participantTable.MRSnpts           = local_get_fulltable_column(fullTable, "MRS.n.pts");
+participantTable.MRSTE             = local_get_fulltable_column(fullTable, "MRS.TE");
+participantTable.MRSTR             = local_get_fulltable_column(fullTable, "MRS.TR");
+participantTable.MRSshimmethod     = local_get_fulltable_column(fullTable, "MRS.shim.method");
+
+%% ------------------------------------------------------------------------
+% Standardize string values
 %% ------------------------------------------------------------------------
 participantTable.MRbrainregion = string(participantTable.MRbrainregion);
+participantTable.MRvendor = string(participantTable.MRvendor);
+participantTable.AnimalStrain = string(participantTable.AnimalStrain);
+participantTable.MRSshimmethod = string(participantTable.MRSshimmethod);
 
+% MRbrainregion
 participantTable.MRbrainregion = strrep(participantTable.MRbrainregion, ...
     "Right hippocampus", "Rhippocampus");
 participantTable.MRbrainregion = strrep(participantTable.MRbrainregion, ...
@@ -189,6 +204,38 @@ participantTable.MRbrainregion = strrep(participantTable.MRbrainregion, ...
     "Right striatum", "Rstriatum");
 participantTable.MRbrainregion = strrep(participantTable.MRbrainregion, ...
     "Left striatum", "Lstriatum");
+
+% MRvendor
+participantTable.MRvendor = strrep(participantTable.MRvendor, ...
+    "Agilent/Varian", "Varian");
+participantTable.MRvendor = strrep(participantTable.MRvendor, ...
+    "Varian/Agilent", "Varian");
+
+% AnimalStrain
+participantTable.AnimalStrain = strrep(participantTable.AnimalStrain, ...
+    "C57BL/6J", "C57BL-6J");
+participantTable.AnimalStrain = strrep(participantTable.AnimalStrain, ...
+    "C57BL/6", "C57BL-6");
+participantTable.AnimalStrain = strrep(participantTable.AnimalStrain, ...
+    "balb/c", "BALB-c");
+participantTable.AnimalStrain = strrep(participantTable.AnimalStrain, ...
+    "BALB/c", "BALB-c");
+participantTable.AnimalStrain = strrep(participantTable.AnimalStrain, ...
+    "B6129SF2/J", "B6129SF2-J");
+participantTable.AnimalStrain = strrep(participantTable.AnimalStrain, ...
+    "FVB/N", "FVB-N");
+
+% MRSshimmethod
+participantTable.MRSshimmethod = strrep(participantTable.MRSshimmethod, ...
+    "FASTMAP/FASTESTMAP", "FASTMAP-FASTESTMAP");
+
+%% ------------------------------------------------------------------------
+% Standardize MRfield
+% Replace all values between 9 and 9.4 with 9.4
+%% ------------------------------------------------------------------------
+participantTable.MRfield = str2double(string(participantTable.MRfield));
+idxField = participantTable.MRfield >= 9 & participantTable.MRfield < 9.4;
+participantTable.MRfield(idxField) = 9.4;
 
 %% ------------------------------------------------------------------------
 % Compute MRvoxelvolume
@@ -246,10 +293,19 @@ nDPinMat = size(out,2);
 % Extract LW / SNR / SNR_LW_ratio
 % First try matData.out
 % If empty/missing, fall back to matData.out_auto
+%
+% Exceptions:
+% DP05-sub-02 -> force NaN, fail
+% DP16-sub-02 -> force NaN, fail
+%
+% For these DPs, later subjects are shifted by -1 in the MAT data because
+% sub-02 is missing/corrupted there.
 %% ------------------------------------------------------------------------
 LW = nan(nRows,1);
 SNR = nan(nRows,1);
 SNR_LW_ratio = nan(nRows,1);
+
+CompCheck = repmat("pass", nRows, 1);
 
 for i = 1:nRows
     token = regexp(dpLabels(i), 'DP\s*0*(\d+)', 'tokens', 'once');
@@ -264,14 +320,29 @@ for i = 1:nRows
         continue
     end
 
+    % ---- Hard-coded exceptions for corrupted sub-02 ----
+    if (dpNumber == 5 && subjNum == 2) || (dpNumber == 16 && subjNum == 2)
+        LW(i) = NaN;
+        SNR(i) = NaN;
+        SNR_LW_ratio(i) = NaN;
+        CompCheck(i) = "fail";
+        continue
+    end
+
+    % ---- Adjust MAT subject index for DPs where sub-02 is missing ----
+    matSubjNum = subjNum;
+    if (dpNumber == 5 || dpNumber == 16) && subjNum > 2
+        matSubjNum = subjNum - 1;
+    end
+
     metricStruct = [];
 
     % ---- First try out ----
     try
         dpCell = out{1, dpNumber};
 
-        if subjNum <= size(dpCell,1)
-            subjEntry = dpCell{subjNum,1};
+        if matSubjNum <= size(dpCell,1)
+            subjEntry = dpCell{matSubjNum,1};
             candidateStruct = local_extract_struct(subjEntry);
 
             if isstruct(candidateStruct)
@@ -305,8 +376,8 @@ for i = 1:nRows
         try
             dpCell_auto = out_auto{1, dpNumber};
 
-            if subjNum <= size(dpCell_auto,1)
-                subjEntry_auto = dpCell_auto{subjNum,1};
+            if matSubjNum <= size(dpCell_auto,1)
+                subjEntry_auto = dpCell_auto{matSubjNum,1};
                 candidateStruct_auto = local_extract_struct(subjEntry_auto);
 
                 if isstruct(candidateStruct_auto)
@@ -406,8 +477,6 @@ end
 %% ------------------------------------------------------------------------
 % Add CompCheck
 %% ------------------------------------------------------------------------
-CompCheck = repmat("pass", height(participantTable), 1);
-
 participantTable = addvars(participantTable, CompCheck, ...
     'NewVariableNames', 'CompCheck');
 
@@ -437,6 +506,25 @@ if isempty(idx)
 end
 
 col = selectedData{:, idx};
+end
+
+function col = local_get_fulltable_column(tbl, candidateName)
+varNames = string(tbl.Properties.VariableNames);
+normVars = local_normalize_names(varNames);
+normTarget = local_normalize_names(string(candidateName));
+
+idx = find(normVars == normTarget, 1);
+
+if isempty(idx)
+    error('Could not find column "%s" in fullTable.', string(candidateName));
+end
+
+col = tbl{:, idx};
+end
+
+function out = local_normalize_names(x)
+out = lower(string(x));
+out = regexprep(out, '[^a-z0-9]', '');
 end
 
 function s = local_extract_struct(entry)
