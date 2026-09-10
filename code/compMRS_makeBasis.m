@@ -28,6 +28,8 @@
 
 function basis = compMRS_makeBasis(DPid)
 
+close all
+
 % First check the vendor using DPcheck:
 check = compMRS_DPcheck(DPid);
 
@@ -39,14 +41,15 @@ sess=dir([DPid filesep subjs(1).name filesep 'ses*']);
 svspath = dir([DPid filesep subjs(1).name filesep sess(1).name filesep 'mrs' filesep '*svs']);
 
 %Make a list of metabolites to include in basis set:
-%metabs = {'Ala','Asp','Cr','GABA','Glc','Gln','Glu','GPC','GSH','Ins','Lac','NAA','NAAG','PCh','PCr','PE','Ser','Tau','Ref0ppm'};
-metabs = {'NAA','Lac','Ref0ppm'};  %Shorter list of metabolites for testing.  Uncomment line above for full list.
+metabs = {'Ala','Asp','Cr','GABA','Glc','Gln','Glu','GPC','GSH','Ins','Lac','NAA','NAAG','PCh','PCr','PE','Ser','Tau','Ref0ppm'};
+%metabs = {'NAA'};  %Shorter list of metabolites for testing.  Uncomment line above for full list.
 
 %Make an inline function definition to make the MM spin systems:
 makeMM = @(n,shift,scale) struct('J',0,'shifts',shift,'name',['MM' num2str(n)],'scaleFactor',scale);
 MMshifts = [0.89, 1.20, 1.39, 1.66, 2.02, 2.26, 2.97, 3.18, 3.84];  %From Fowler et al. 2021
 MMscales = [   3,    2,    2,    2,    2,    2,    2,    2,    2];  %
 MMlws =    [  34,   27,   31,   61,   82,   23,   27,   29,   88];  %From Fowler et al. 2021
+MMs = {'M0.89', 'M1.20', 'M1.39', 'M1.66', 'M2.02', 'M2.26', 'M2.97', 'M3.18', 'M3.84'};
 
 %Now make the macromolecule basis functions:
 for n=1:9
@@ -96,7 +99,7 @@ for n=1:length(sysMM)
 end
     
 %Make an output directory in the DP folder
-mkdir([DPid '/basis-set']);
+mkdir([DPid filesep 'basis-set']);
 
 %Now add the reference peak to all of the other metabolite and MM basis
 %functions.  Then, shift them to be centered at 4.65 ppm.  Then write to
@@ -107,14 +110,20 @@ for n=1:length(metabs)-1
     eval([metabs{n} '=op_movef0(' metabs{n} ',(4.65 -' num2str(simPars.centreFreq) ')*42.577*' num2str(simPars.Bfield) ');']);
     eval(['[~]=io_writelcmraw(' metabs{n} ',''' DPid '/basis-set/' metabs{n} '.RAW'',''' metabs{n} ''');']);
     eval(['basis{n}=' metabs{n} ';']);
+    eval(['basis{n}=' metabs{n} ';']);
+    basis{n}.name = metabs{n};
 end
 for n=1:length(sysMM)
     eval([sysMM{n}.name '=op_addScans(' sysMM{n}.name ',' metabs{end} ');']);
     eval([sysMM{n}.name '=op_movef0(' sysMM{n}.name ',(4.65 -' num2str(simPars.centreFreq) ')*42.577*' num2str(simPars.Bfield) ');']);
     eval(['[~]=io_writelcmraw(' sysMM{n}.name ',''' DPid '/basis-set/' sysMM{n}.name '.RAW'',''' sysMM{n}.name ''');']);
     eval(['basis{length(metabs)-1 + n}=' sysMM{n}.name ';']);
+    eval(['basis{length(metabs)-1 + n}=' sysMM{n}.name ';']);
+    basis{length(metabs)-1 + n}.name = sysMM{n}.name;
 end
-
+op_plotspec(basis,0.2,5,'Frequency (ppm)', '',DPid)
+legend([metabs, MMs], 'Location', 'northeast', 'FontSize', 10)
+saveas(gcf, [DPid filesep 'basis-set' filesep 'basisset-' DPid '.jpg'])
 
 
     
