@@ -60,10 +60,10 @@ if strcmp(check.vendor(1),'BRUKER')
         simPars.tau2 = method.TE2;
 
         if isfield(method,'VoxPul2Enum')
-            simPars.rfName = [char(method.VoxPul2Enum) '.rfc'];
+            simPars.rfName = [char(method.VoxPul2Enum)];
             VP2=char(method.VoxPul2);
         elseif isfield(method,'VoxPulse2Enum')
-            simPars.rfName = [char(method.VoxPulse2Enum) '.rfc'];
+            simPars.rfName = [char(method.VoxPulse2Enum)];
             VP2=char(method.VoxPulse2);
         end
 
@@ -85,10 +85,10 @@ if strcmp(check.vendor(1),'BRUKER')
         simPars.tau2 = method.StTM;
 
         if isfield(method,'VoxPul1Enum')
-            simPars.rfName = [char(method.VoxPul1Enum) '.exc'];
+            simPars.rfName = [char(method.VoxPul1Enum)];
             VP1=char(method.VoxPul1);
         elseif isfield(method,'VoxPulse1Enum')
-            simPars.rfName = [char(method.VoxPulse1Enum) '.exc'];
+            simPars.rfName = [char(method.VoxPulse1Enum)];
             VP1=char(method.VoxPulse1);
         end
 
@@ -109,10 +109,10 @@ if strcmp(check.vendor(1),'BRUKER')
         simPars.te = method.PVM_EchoTime;
 
         if isfield(method,'VoxPul2Enum')
-            simPars.rfName = [char(method.VoxPul2Enum) '.rfc'];
+            simPars.rfName = [char(method.VoxPul2Enum)];
             VP2=char(method.VoxPul2);
         elseif isfield(method,'VoxPulse2Enum')
-            simPars.rfName = [char(method.VoxPulse2Enum) '.rfc'];
+            simPars.rfName = [char(method.VoxPulse2Enum)];
             VP2=char(method.VoxPulse2);
         end
 
@@ -133,10 +133,10 @@ if strcmp(check.vendor(1),'BRUKER')
         simPars.tau1 = method.PVM_EchoTime;
 
         if isfield(method,'VoxPul3Enum')
-            simPars.rfName = [char(method.VoxPul3Enum) '.rfc'];
+            simPars.rfName = [char(method.VoxPul3Enum)];
             VP3=char(method.VoxPul3);
         elseif isfield(method,'VoxPulse3Enum')
-            simPars.rfName = [char(method.VoxPulse3Enum) '.rfc'];
+            simPars.rfName = [char(method.VoxPulse3Enum)];
             VP3=char(method.VoxPulse3);
         end
 
@@ -210,15 +210,15 @@ elseif strcmp(check.vendor(1),'VARIAN')
 
     elseif contains(sequence,'laser','IgnoreCase',true)
         isLASER = true;
-        simPars.seq = 'STEAM';
-        simPars.seq = 'STEAM';
+        simPars.seq = 'LASER';
         simPars.te = par.te.value * 1000; %convert from [s] to [ms]
         simPars.rfName = [par.pat180Y.value{1} '.RF'];
         simPars.refTp = par.pw180.value / 1000; %convert from [us] to [ms]
         simPars.flipAngle=180; %[degrees] (Hard coding for now until I can find flip angle in procpar).
 
-    elseif contains(sequence,'special','IgnoreCase',true) || contains(sequence,'isise','IgnoreCase',true)
+    elseif contains(sequence,'special','IgnoreCase',true) || contains(sequence,'isise','IgnoreCase',true) || contains(sequence,'specialcsi1v','IgnoreCase',true)
         isSPECIAL = true;
+        simPars.seq = 'SPECIAL';
         simPars.tau1 = par.te.value * 1000;
         simPars.rfName = [par.p2pat.value{1} '.RF'];
         simPars.refTp = par.pw180.value / 1000; % converting from [s] to [ms]
@@ -231,9 +231,15 @@ end
 % Now, load the RF pulse waveform and replace the simPars RF waveform with 
 % the resulting FID-A structure:
 if isPRESS || isSPECIAL || isLASER
-    RF=io_loadRFwaveform(simPars.rfName,'ref');
+    simPars.rfName = erase(simPars.rfName, {'<', '>'});
+    try
+        RF=io_loadRFwaveform([simPars.rfName '.rfc'],'ref');
+    catch
+        RF=io_loadRFwaveform([simPars.rfName '.inv'],'ref');
+    end
     simPars.refocWaveform = RF;
 elseif isSTEAM
+    simPars.rfName = erase(simPars.rfName, {'<', '>'});
     RF=io_loadRFwaveform(simPars.rfName,'exc');
     simPars.excWaveform = RF;
 end

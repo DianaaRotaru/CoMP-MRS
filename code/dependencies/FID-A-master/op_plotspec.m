@@ -130,7 +130,8 @@ elseif iscell(in)
     end
     ylabel('ARB UNITS');
     disp('Multiple input spectra detected!! ')
-    stagger=input('Please enter the desired vertical spacing of the spectra in ARB UNITS:  ');
+    %stagger=input('Please enter the desired vertical spacing of the spectra in ARB UNITS:  ');
+    stagger=0.02
     close;
     fignum=figure;
     hold
