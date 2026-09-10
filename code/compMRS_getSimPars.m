@@ -171,6 +171,8 @@ if strcmp(check.vendor(1),'BRUKER')
         elseif isPRESS || isSPECIAL
             if bwfac == 3400 && sharpness ==3
                 simPars.rfName = 'brukerCalc_ref_sh3_bw3400.txt';
+            elseif bwfac == 2600 && sharpness ==3
+                simPars.rfName = 'brukerCalc_ref_sh3_bw2600.txt';
             else
                 error('ERROR: PRESS/SPECIAL - No matching BWFAC and Sharpness values found.  ABORTING!');
             end
