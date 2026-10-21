@@ -64,14 +64,14 @@ source(file.path(base_dir, "scripts", "PlotFacetBoxPlots.R"))
 
 save_csv               <- TRUE # Set to TRUE to save descriptive statistics tables as CSV files in the derivatives directory
 show_pie_charts        <- TRUE # Set to TRUE to create pie charts of categorical variables (e.g., species
-show_amcharts          <- TRUE # Set to TRUE to create interactive 3D pie charts using amCharts4
+show_amcharts          <- FALSE # Set to TRUE to create interactive 3D pie charts using amCharts4
 show_dot_plots         <- TRUE # Set to TRUE to create dot plots of spectral quality metrics by different grouping variables
 show_box_plots         <- TRUE # Set to TRUE to create box plots of spectral quality metrics by different grouping variables
 show_facet_plots       <- TRUE # Set to TRUE to create facet plots of spectral quality metrics by different grouping variables
-show_model_diagnostics <- TRUE # Set to TRUE to show model diagnostic plots (e.g., residuals, Q-Q plots) for linear mixed-effects models
-calc_VPCs              <- TRUE # Set to TRUE to calculate variance partition coefficients (VPCs) from linear mixed-effects models to assess the proportion of variance explained by each random effect
-export_model_table     <- TRUE # Set to TRUE to export a modelsummary comparison table of LMEM results to Word (.docx)
-run_LRTs               <- TRUE # Set to TRUE to run likelihood ratio tests (LRTs) to compare linear mixed-effects models with different random effects structures and derive p-values for the added random effects
+show_model_diagnostics <- FALSE # Set to TRUE to show model diagnostic plots (e.g., residuals, Q-Q plots) for linear mixed-effects models
+calc_VPCs              <- FALSE # Set to TRUE to calculate variance partition coefficients (VPCs) from linear mixed-effects models to assess the proportion of variance explained by each random effect
+export_model_table     <- FALSE # Set to TRUE to export a modelsummary comparison table of LMEM results to Word (.docx)
+run_LRTs               <- FALSE # Set to TRUE to run likelihood ratio tests (LRTs) to compare linear mixed-effects models with different random effects structures and derive p-values for the added random effects
 run_pbkrtest           <- FALSE # Set to TRUE to run parametric bootstrapping using the pbkrtest package to compare linear mixed-effects models with different random effects structures and derive p-values for the added random effects (can be time-consuming with larger datasets)
 
 # Load data -------------------------------------------------------------------

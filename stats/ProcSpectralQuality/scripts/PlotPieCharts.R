@@ -73,7 +73,7 @@ PlotPieCharts <- function(data, out_dir, plots_dir, show_pie_charts = TRUE, show
         aes(x = 1.3, label = perc_label), # aes(label = count_label),
         position = position_stack(vjust = 0.2),
         color = "white",
-        size = 5,
+        size = 10,
         fontface = "bold",
         family = "serif"
       ) +
@@ -89,7 +89,7 @@ PlotPieCharts <- function(data, out_dir, plots_dir, show_pie_charts = TRUE, show
         plot.title = element_text(
           family = "serif",
           face = "bold",
-          size = 24,
+          size = 32,
           hjust = 0.5,
           color = "#4D4D4D"
         ),
@@ -100,10 +100,10 @@ PlotPieCharts <- function(data, out_dir, plots_dir, show_pie_charts = TRUE, show
         legend.text = element_text(
           family = "serif",
           face = "bold",
-          size = 12,
+          size = 24,
           color = "#4D4D4D"
         ),
-        legend.key.size = unit(0.35, "cm"),
+        legend.key.size = unit(0.4, "cm"),
         legend.spacing.x = unit(0.2, "cm"),
         plot.margin = margin(8, 8, 8, 8)
       ) 
@@ -160,6 +160,16 @@ PlotPieCharts <- function(data, out_dir, plots_dir, show_pie_charts = TRUE, show
     list(var = "ShimMethod",     title = "Shim method (#DPs)")
   )
   
+  pie_specs <- list(
+    list(var = "Species",  title = "Species (#DPs)"),
+    list(var = "Vendor",       title = "Vendor (#DPs)"),
+    list(var = "FieldStrength",        title = "Field strength (#DPs)"),
+    list(var = "Sequence",     title = "Pulse sequence (#DPs)"),
+    list(var = "VOI",  title = "Voxel location (#DPs)"),
+    list(var = "Cryoprobe",     title = "Cryoprobe (#DPs)"),
+    list(var = "ShimMethod",     title = "Shim method (#DPs)")
+  )
+  
   if (show_pie_charts) {
     
     pie_plots <- lapply(pie_specs, function(x) {
@@ -176,14 +186,14 @@ PlotPieCharts <- function(data, out_dir, plots_dir, show_pie_charts = TRUE, show
     
     ### Combined preview of pie charts ------------------------------------------
     
-    combined_pies <- patchwork::wrap_plots(pie_plots, ncol = 4)
+    combined_pies <- patchwork::wrap_plots(pie_plots, ncol = 7)
     ggsave(
       filename = file.path(plots_dir, "all_piecharts_combined.png"),
       plot = combined_pies,
-      width = 20,
-      height = 16,
+      width = 31,
+      height = 18,
       units = "in",
-      dpi = 300
+      dpi = 600
     )
     
   }

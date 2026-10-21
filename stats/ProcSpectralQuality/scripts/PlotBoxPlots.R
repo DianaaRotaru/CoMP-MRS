@@ -154,8 +154,8 @@ PlotBoxPlots <- function(data, out_dir, y_vars, x_vars) {
         plot.title = element_text(size = 10, face = "bold", hjust = 0.5),
         plot.margin = margin(3, 3, 3, 3),
         axis.title = element_text(size = 8),
-        axis.text = element_text(size = 7),
-        axis.text.x = element_text(size = 8, face = "bold"),
+        axis.text = element_text(size = 5),
+        axis.text.x = element_text(size = 6, face = "bold"),
         axis.text.y = element_text(size = 8, face = "bold"),
         legend.position = "none"
       )
@@ -173,8 +173,8 @@ PlotBoxPlots <- function(data, out_dir, y_vars, x_vars) {
     
     # Requested order
     p_dp          <- get_plot(all_boxplots, paste(y$var, "DP", sep = "_by_"))
+
     p_species     <- get_plot(all_boxplots, paste(y$var, "Species", sep = "_by_"))
-    
     p_sex         <- get_plot(all_boxplots, paste(y$var, "Sex", sep = "_by_"))
     p_brainregion <- get_plot(all_boxplots, paste(y$var, "VOI", sep = "_by_"))
     p_site        <- get_plot(all_boxplots, paste(y$var, "SiteID", sep = "_by_"))
@@ -198,23 +198,23 @@ PlotBoxPlots <- function(data, out_dir, y_vars, x_vars) {
         )
     }
     
-     row1 <- (p_dp | p_species) +
-      patchwork::plot_layout(widths = c(4, 1))
+     row1 <- (p_dp) +
+      patchwork::plot_layout(widths = c(38, 1))
      row1 <- patchwork::wrap_plots(
        keep_y_axis(p_dp),
-       remove_y_axis(p_species),
        nrow = 1,
-       widths = c(4, 1)
+       widths = c(38, 1)
      )
     
-    row2 <- (p_sex | p_brainregion | p_site) +
-      patchwork::plot_layout(widths = c(0.7, 1.5, 2.5))
+    row2 <- (p_species | p_sex | p_brainregion | p_site) +
+      patchwork::plot_layout(widths = c(0.7, 0.7, 0.7, 2.1))
     row2 <- patchwork::wrap_plots(
-      keep_y_axis(p_sex),
+      keep_y_axis(p_species),
+      remove_y_axis(p_sex),
       remove_y_axis(p_brainregion),
       remove_y_axis(p_site),
       nrow = 1,
-      widths = c(0.7, 1.5, 2.5)
+      widths = c(0.7, 0.7, 0.7, 2.1)
     )
     
     row3 <- (p_vendor | p_field | p_sequence | p_cryoprobe | p_shim) +
@@ -226,7 +226,7 @@ PlotBoxPlots <- function(data, out_dir, y_vars, x_vars) {
       remove_y_axis(p_cryoprobe),
       remove_y_axis(p_shim),
       nrow = 1,
-      widths = c(2/3, 1.5, 1.5, 2/3, 2/3)
+      widths = c(2/3, 1.1, 1.5, 2/3, 1.1)
     )
     
     combined_page <- row1 / row2 / row3 +
