@@ -24,7 +24,7 @@
 % w1max     = Default B1 max (typically assuming a 5 ms Tp)
 % bw        = bandwidth
 
-function [RF_struct w1max]=rf2RFwaveform_Bruker(rf,type,f0,Tp,w1max,bw);
+function [RF_struct, w1max]=rf2RFwaveform_Bruker_DGR(rf,type,f0,Tp,w1max,bw)
 
 got_w1max = true;
 got_bw = true;
@@ -99,15 +99,18 @@ if ~got_w1max
         %out the w1max;  To do this, we can plot Mz as a function of w1 and
         %find the value of w1 that results in the desired flip angle.
         [mv,sc]=bes(rf,Tp*1000,'b',f0/1000,0,5,40000);
-        figure,
+        % Find the first (lowest index) minimum value of mz (mv(3,:))
+        min_mz_ind=find(diff(mv(3,:))>0,1,'first') + 1;
+        w1max=sc(min_mz_ind);
+        h=figure(101);
+        clf(h);
+        h.Name='Find w1 for desired flip angle';
+        hold on;
         plot(sc,mv(3,:));
-        xlabel('w1 (kHz)');
-        ylabel('mz');
-        if got_w1max==0
-            w1max=sc(strfind(mv(3,:),min(mv(3,:)))); % kHz
-        else
-            xlim([0, w1max]);
-        end
+        scatter(sc(min_mz_ind),mv(3,min_mz_ind),'r','filled');
+        hold off;
+        xlabel('\omega_{1} (kHz)');
+        ylabel('{\it{M}}_{z}');
         w1max=w1max*1000; %convert w1max to [Hz]
         tw1=Tp*w1max;
     end
