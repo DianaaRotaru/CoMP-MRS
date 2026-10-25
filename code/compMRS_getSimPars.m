@@ -156,7 +156,7 @@ if strcmp(check.vendor(1),'BRUKER')
             sharpness = str2double(VP3_values{5});
             bwfac = str2double(VP3_values{6});
         end
-
+        
     end
 
     %Check if the waveform is calculated.  If so, re-name the waveform
@@ -176,9 +176,9 @@ if strcmp(check.vendor(1),'BRUKER')
             end
         elseif isPRESS || isSPECIAL
             if bwfac == 3400 && sharpness ==3
-                simPars.rfName = 'brukerCalc_ref_sh3_bw3400.txt';
+                simPars.rfName = 'brukerCalc_ref_sh3_bw3400';
             elseif bwfac == 2600 && sharpness ==3
-                simPars.rfName = 'brukerCalc_ref_sh3_bw2600.txt';
+                simPars.rfName = 'brukerCalc_ref_sh3_bw2600';
             else
                 error('ERROR: PRESS/SPECIAL - No matching BWFAC and Sharpness values found.  ABORTING!');
             end
@@ -248,20 +248,33 @@ if isPRESS || isSPECIAL || isLASER
         simPars.refTp = simPars.refTp * 413/256;
     end
     simPars.rfName = erase(simPars.rfName, {'<', '>'});
+    %simPars.rfName = erase(simPars.rfName, {'.txt'});
     
     if strcmp(check.vendor(1),'VARIAN')
         RF=io_loadRFwaveform([simPars.rfName '.RF'],'ref');
     elseif strcmp(check.vendor(1),'BRUKER')
         try
-            RF=io_loadRFwaveform([simPars.rfName '.rfc'],'ref');
+            if sum(strfind(simPars.rfName, 'Calc')) > 0
+                RF=io_loadRFwaveform([simPars.rfName '.txt'],'ref');
+            else
+                try
+                    RF=io_loadRFwaveform([simPars.rfName '.rfc'],'ref');
+                catch
+                    RF=io_loadRFwaveform([simPars.rfName '.inv'],'ref');
+                end
+            end
         catch
-            RF=io_loadRFwaveform([simPars.rfName '.inv'],'ref');
+            disp('Bruker refocusing pulse not found');
         end
     end
     simPars.refocWaveform = RF;
 elseif isSTEAM
     simPars.rfName = erase(simPars.rfName, {'<', '>'});
-    RF=io_loadRFwaveform(simPars.rfName,'exc');
+    try 
+        RF=io_loadRFwaveform(simPars.rfName,'exc');
+    catch
+        RF=io_loadRFwaveform([simPars.rfName '.exc'],'exc');
+    end
     simPars.excWaveform = RF;
 end
 
@@ -270,15 +283,36 @@ end
 if simPars.Bfield<8
     simPars.lw = 1;         %Simulation linewidth in [Hz]
     simPars.Npts = 8192;    %Number of spectral points
-    simPars.sw = 4000;      %Spectral width in [Hz]
+    if strcmp(check.vendor(1),'BRUKER')
+        simPars.sw = method.PVM_SpecSWH;
+        simPars.centreFreq = method.PVM_FrqWorkPpm(1);
+    elseif strcmp(check.vendor(1),'VARIAN')
+        simPars.sw = par.sw.value;
+        simPars.centreFreq = 2.7;
+    end
+    %simPars.sw = 4000;      %Spectral width in [Hz]
 elseif simPars.Bfield>=8 && simPars.Bfield<12
     simPars.lw = 1.5;       %Simulation linewidth in [Hz]
     simPars.Npts = 12288;   %Number of spectral points
-    simPars.sw = 6000;      %Spectral width in [Hz]
+    if strcmp(check.vendor(1),'BRUKER')
+        simPars.sw = method.PVM_SpecSWH;
+        simPars.centreFreq = method.PVM_FrqWorkPpm(1);
+    elseif strcmp(check.vendor(1),'VARIAN')
+        simPars.sw = par.sw.value;
+        simPars.centreFreq = 2.7;
+    end
+    %simPars.sw = 6000;      %Spectral width in [Hz]
 elseif simPars.Bfield>=12
     simPars.lw = 2;         %Simulation linewidth in [Hz]
     simPars.Npts = 16384;   %Number of spectral points
-    simPars.sw = 8000;      %Spectral width in [Hz]
+    if strcmp(check.vendor(1),'BRUKER')
+        simPars.sw = method.PVM_SpecSWH;
+        simPars.centreFreq = method.PVM_FrqWorkPpm(1);
+    elseif strcmp(check.vendor(1),'VARIAN')
+        simPars.sw = par.sw.value;
+        simPars.centreFreq = 2.7;
+    end
+    %simPars.sw = 8000;      %Spectral width in [Hz]
 end
 
 simPars.thkX = 2;           %Voxel size in x-direction in [arb units]
@@ -287,7 +321,7 @@ simPars.fovX = 4;           %Simulation FOV in x-direction in [arb units]
 simPars.fovY = 4;           %Simulation FOV in y-direction in [arb units]
 simPars.nX = 32;            %Number of spatial points to simulate in x-direction
 simPars.nY = 32;            %Number of spatial points to simulate in y-direction
-simPars.centreFreq = 2.7;   %Centre frequency in [ppm]
+%simPars.centreFreq = 2.7;   %Centre frequency in [ppm]
 simPars.lineshape = 'L';    %Lorentzian lineshape for metabolite simulations
 
 %**************Done generating the simPars structure
