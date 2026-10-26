@@ -25,7 +25,7 @@
 % OUTPUTS:
 % RF_struct = RF pulse waveform in FID-A rf pulse structure format.
 
-function RF_struct=io_loadRFwaveform_Bruker(filename,type,f0,w1max);
+function RF_struct=io_loadRFwaveform_Bruker_DGR(filename,type,f0,w1max)
 got_w1max=true;
 if nargin<4
     got_w1max=false;
@@ -118,10 +118,18 @@ if got_w1max==false;
         %out the w1max;  To do this, we can plot Mz as a function of w1 and
         %find the value of w1 that results in the desired flip angle.
         [mv,sc]=bes(rf,Tp*1000,'b',f0/1000,0,5,40000);
+        % Find the first (lowest index) minimum value of mz (mv(3,:))
+        min_mz_ind=find(diff(mv(3,:))>0,1,'first') + 1;
+        w1max=sc(min_mz_ind);
+        h=figure(101);
+        clf(h);
+        h.Name='Find w1 for desired flip angle';
+        hold on;
         plot(sc,mv(3,:));
-        xlabel('w1 (kHz)');
-        ylabel('mz');
-        w1max=input('Input desired w1max in kHz (for 5.00 ms pulse):  ');
+        scatter(sc(min_mz_ind),mv(3,min_mz_ind),'r','filled');
+        hold off;
+        xlabel('\omega_{1} (kHz)');
+        ylabel('{\it{M}}_{z}');
         w1max=w1max*1000; %convert w1max to [Hz]
         tw1=Tp*w1max;
     end

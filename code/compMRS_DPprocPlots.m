@@ -34,8 +34,8 @@ saveIndividualPanels  = false;  % set true if you also want one file per DP
 selectedDPs = [11 31 10 20];   % <-- change these to your 4 desired DPs
 
 % ---- Fixed layout for all bounded plots ----
-nCols = 4;
-nRows = 9;
+nCols = 6;
+nRows = 6;
 
 %% Load data just to identify available DPs
 struct = load(dataFile);
@@ -87,8 +87,8 @@ if numel(validIdx) > maxTiles
         numel(validIdx), maxTiles, maxTiles);
 end
 
-figW = 1400;
-figH = 2100;
+figW = 2400;
+figH = 1400;
 f = figure('Color','w','Position',[80 80 figW figH]);
 
 tl = tiledlayout(nRows, nCols, 'TileSpacing','compact', 'Padding','compact');
