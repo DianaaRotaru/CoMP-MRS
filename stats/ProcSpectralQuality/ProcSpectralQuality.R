@@ -65,9 +65,9 @@ source(file.path(base_dir, "scripts", "PlotFacetBoxPlots.R"))
 save_csv               <- TRUE # Set to TRUE to save descriptive statistics tables as CSV files in the derivatives directory
 show_pie_charts        <- TRUE # Set to TRUE to create pie charts of categorical variables (e.g., species
 show_amcharts          <- FALSE # Set to TRUE to create interactive 3D pie charts using amCharts4
-show_dot_plots         <- TRUE # Set to TRUE to create dot plots of spectral quality metrics by different grouping variables
-show_box_plots         <- TRUE # Set to TRUE to create box plots of spectral quality metrics by different grouping variables
-show_facet_plots       <- TRUE # Set to TRUE to create facet plots of spectral quality metrics by different grouping variables
+show_dot_plots         <- FALSE # Set to TRUE to create dot plots of spectral quality metrics by different grouping variables
+show_box_plots         <- FALSE # Set to TRUE to create box plots of spectral quality metrics by different grouping variables
+show_facet_plots       <- FALSE # Set to TRUE to create facet plots of spectral quality metrics by different grouping variables
 show_model_diagnostics <- FALSE # Set to TRUE to show model diagnostic plots (e.g., residuals, Q-Q plots) for linear mixed-effects models
 calc_VPCs              <- FALSE # Set to TRUE to calculate variance partition coefficients (VPCs) from linear mixed-effects models to assess the proportion of variance explained by each random effect
 export_model_table     <- FALSE # Set to TRUE to export a modelsummary comparison table of LMEM results to Word (.docx)

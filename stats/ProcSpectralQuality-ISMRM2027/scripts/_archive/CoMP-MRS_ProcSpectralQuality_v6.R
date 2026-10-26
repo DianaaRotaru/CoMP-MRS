@@ -1,0 +1,1014 @@
+# R script to visualize and statistically analyze data from CoMP-MRS
+#
+# Authors:
+#   Mark Mikkelsen, Ph.D. (mam4041@med.cornell.edu)
+#   Diana G. Rotaru, Ph.D. (diana.rotaru@meduniwien.ac.at)
+#
+# Last updated: 2026-03-23, 2026-03-25 DR, 2026-03-26 DR 
+
+
+# Initialize ------------------------------------------------------------------
+
+rm(list = ls()) # Clear the current environment
+try(dev.off(dev.list()["RStudioGD"]), silent = TRUE) # If using RStudio, this clears all plots
+cat("\014") # CTRL+L (clear console)
+
+
+# Set data directories --------------------------------------------------------
+
+##### CHANGE THESE DIRECTORIES AS NEEDED #####
+
+curr_dir  <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
+data_dir  <- file.path(curr_dir, "data")
+deriv_dir <- file.path(data_dir, "derivatives")
+plots_dir <- file.path(deriv_dir, "plots")
+
+if (!dir.exists(deriv_dir)) {
+  dir.create(deriv_dir)
+}
+
+if (!dir.exists(plots_dir)) {
+  dir.create(plots_dir)
+} else {
+  unlink(plots_dir, recursive = TRUE)
+  dir.create(plots_dir)
+}
+
+
+# Install/load packages -------------------------------------------------------
+
+# Function to install and/or load necessary packages
+load.packages <- function(pkg) {
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg)) {
+    install.packages(new.pkg, dependencies = TRUE)
+  }
+  sapply(pkg, require, character.only = TRUE)
+}
+
+# Packages needed for this script
+packages <- c(
+  "tidyverse",
+  "psych",
+  "MASS",
+  "lme4",
+  "emmeans",
+  "multcomp",
+  "lattice",
+  "car",
+  "berryFunctions",
+  "patchwork",
+  "cowplot",
+  "ggpubr",
+  "irr",
+  "DT",
+  "raster",
+  "rstatix",
+  "extrafont",
+  "hrbrthemes",
+  "see",
+  "latex2exp",
+  "boot",
+  "pbkrtest",
+  "parallel",
+  "nloptr",
+  "optimx",
+  "sjPlot",
+  "performance",
+  "rAmCharts4",
+  "htmlwidgets"
+)
+
+load.packages(packages)
+
+
+# Set inline functions --------------------------------------------------------
+
+# MAD outlier (Leys et al., 2013, doi:10.1016/j.jesp.2013.03.013)
+mad.outlier <- function(x, thresh = 2.5) {
+  m <- mad(x, na.rm = TRUE)
+  lb <- median(x, na.rm = TRUE) - thresh * m
+  ub <- median(x, na.rm = TRUE) + thresh * m
+  outl <- x < lb | x > ub
+  return(outl)
+}
+
+# Removal of multivariate outliers using the Mahalanobis-minimum covariance 
+# determinant (MMCD) (Leys et al., 2018, doi:10.1016/j.jesp.2017.09.011)
+MMCD <- function(x, y, quant = 0.75, alpha = 0.01) {
+  mat <- cbind(x, y)
+  output <- cov.mcd(na.omit(mat), quantile.used = nrow(na.omit(mat)) * quant, nsamp = "exact")
+  mmcd <- mahalanobis(mat, output$center, output$cov)
+  cutoff <- qchisq(p = 1 - alpha, df = 2)
+  out <- -which(mmcd > cutoff | is.na(mmcd))
+  if (length(out) == 0) {
+    out <- 1:nrow(mat)
+  }
+  return(out)
+}
+
+nloptFun <- function(fn, par, lower, upper, control=list(), ...) {
+  for (n in names(defaultControl))
+    if (is.null(control[[n]])) control[[n]] <- defaultControl[[n]]
+  res <- nloptr(x0=par, eval_f=fn, lb=lower, ub=upper, opts=control, ...)
+  with(res, list(par=solution,
+                 fval=objective,
+                 feval=iterations,
+                 conv=if (status>0) 0 else status,
+                 message=message))
+}
+
+cs. <- function(x) scale(x, center=T, scale=T) # for standardizing (z-transforming)
+                                               # outcome and predictor variables;
+                                               # aids with model convergence and
+                                               # interpretability of parameter estimates
+
+
+# Load data -------------------------------------------------------------------
+
+# Load the participants.csv file
+DATA <- read_csv(
+  file.path(data_dir, "CoMP_MRS_Rstats_input.csv"),
+  col_types = list(
+    CompID = col_factor(),
+    SiteID = col_factor(),
+    DP = col_factor(),
+    AnimalID = col_factor(),
+    AnimalSpecies = col_factor(),
+    AnimalStrain = col_factor(),
+    AnimalAge = col_double(),
+    AnimalSex = col_factor(),
+    AnimalWeight = col_double(),
+    MRvendor = col_factor(),
+    MRfield = col_double(),
+    MRsequence = col_factor(),
+    MRbrainregion = col_factor(),
+    MRvoxelvolume = col_double(),
+    MRaverages = col_double(),
+    MRsoftwareversion = col_factor(),
+    MRcoil = col_factor(),
+    MRSsw = col_double(),
+    MRSnpts = col_double(),
+    MRSTE = col_double(),
+    MRSTR = col_double(),
+    MRSshimmethod = col_factor(),
+    LW = col_double(),
+    SNR = col_double(),
+    SNR_LW_Ratio = col_double(),
+    CompCheck = col_factor()
+  )
+)
+
+DATA[is.na(DATA)] <- NA # Ensure that all missing values are represented as NA
+                        # (in case there are any other representations of missing
+                        # data in the original CSV)
+
+
+# Spectral quality metrics and normalization ----------------------------------
+
+DATA <- DATA %>%
+  mutate(
+    SNR_LW_Ratio_norm   = SNR_LW_Ratio / (sqrt(MRaverages) * MRvoxelvolume),
+    SNR_LW_Product_norm = (LW * SNR) / (sqrt(MRaverages) * MRvoxelvolume),
+    LW_norm             = LW / (sqrt(MRaverages) * MRvoxelvolume),
+    SNR_norm            = SNR / (sqrt(MRaverages) * MRvoxelvolume)
+  )
+
+
+# Descriptive stats function --------------------------------------------------
+
+make_stats <- function(data, group_var, value_var, prefix) {
+  data %>%
+    group_by(across(all_of(group_var))) %>%
+    summarise(
+      mean = mean(.data[[value_var]], na.rm = TRUE),
+      sd   = sd(.data[[value_var]], na.rm = TRUE),
+      cv   = cv(.data[[value_var]], na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    rename(
+      !!paste0("mean", prefix) := mean,
+      !!paste0("sd", prefix)   := sd,
+      !!paste0("cv", prefix)   := cv
+    )
+}
+
+
+# Descriptive stats -----------------------------------------------------------
+
+STATS <- list()
+
+### DP ------------------------------------------------------------------------
+
+STATS$DP <- list(
+  LW      = make_stats(DATA, "DP", "LW_norm", "LW"),
+  SNR     = make_stats(DATA, "DP", "SNR_norm", "SNR"),
+  Ratio   = make_stats(DATA, "DP", "SNR_LW_Ratio_norm", "Ratio"),
+  Product = make_stats(DATA, "DP", "SNR_LW_Product_norm", "Product")
+)
+
+### SiteID --------------------------------------------------------------------
+
+STATS$SiteID <- list(
+  LW      = make_stats(DATA, "SiteID", "LW_norm", "LW"),
+  SNR     = make_stats(DATA, "SiteID", "SNR_norm", "SNR"),
+  Ratio   = make_stats(DATA, "SiteID", "SNR_LW_Ratio_norm", "Ratio"),
+  Product = make_stats(DATA, "SiteID", "SNR_LW_Product_norm", "Product")
+)
+
+### AnimalSpecies -------------------------------------------------------------
+
+STATS$AnimalSpecies <- list(
+  LW      = make_stats(DATA, "AnimalSpecies", "LW_norm", "LW"),
+  SNR     = make_stats(DATA, "AnimalSpecies", "SNR_norm", "SNR"),
+  Ratio   = make_stats(DATA, "AnimalSpecies", "SNR_LW_Ratio_norm", "Ratio"),
+  Product = make_stats(DATA, "AnimalSpecies", "SNR_LW_Product_norm", "Product")
+)
+
+### MRvendor ------------------------------------------------------------------
+
+STATS$MRvendor <- list(
+  LW      = make_stats(DATA, "MRvendor", "LW_norm", "LW"),
+  SNR     = make_stats(DATA, "MRvendor", "SNR_norm", "SNR"),
+  Ratio   = make_stats(DATA, "MRvendor", "SNR_LW_Ratio_norm", "Ratio"),
+  Product = make_stats(DATA, "MRvendor", "SNR_LW_Product_norm", "Product")
+)
+
+### MRfield -------------------------------------------------------------------
+
+STATS$MRfield <- list(
+  LW      = make_stats(DATA, "MRfield", "LW_norm", "LW"),
+  SNR     = make_stats(DATA, "MRfield", "SNR_norm", "SNR"),
+  Ratio   = make_stats(DATA, "MRfield", "SNR_LW_Ratio_norm", "Ratio"),
+  Product = make_stats(DATA, "MRfield", "SNR_LW_Product_norm", "Product")
+)
+
+### MRsequence ----------------------------------------------------------------
+
+STATS$MRsequence <- list(
+  LW      = make_stats(DATA, "MRsequence", "LW_norm", "LW"),
+  SNR     = make_stats(DATA, "MRsequence", "SNR_norm", "SNR"),
+  Ratio   = make_stats(DATA, "MRsequence", "SNR_LW_Ratio_norm", "Ratio"),
+  Product = make_stats(DATA, "MRsequence", "SNR_LW_Product_norm", "Product")
+)
+
+### MRbrainregion -------------------------------------------------------------
+
+STATS$MRbrainregion <- list(
+  LW      = make_stats(DATA, "MRbrainregion", "LW_norm", "LW"),
+  SNR     = make_stats(DATA, "MRbrainregion", "SNR_norm", "SNR"),
+  Ratio   = make_stats(DATA, "MRbrainregion", "SNR_LW_Ratio_norm", "Ratio"),
+  Product = make_stats(DATA, "MRbrainregion", "SNR_LW_Product_norm", "Product")
+)
+
+### AnimalSpecies x MRvendor --------------------------------------------------
+
+STATS$AnimalSpecies_MRvendor <- DATA %>%
+  group_by(MRvendor, AnimalSpecies) %>%
+  summarise(
+    meanLW      = mean(LW_norm, na.rm = TRUE),
+    sdLW        = sd(LW_norm, na.rm = TRUE),
+    cvLW        = cv(LW_norm, na.rm = TRUE),
+    meanSNR     = mean(SNR_norm, na.rm = TRUE),
+    sdSNR       = sd(SNR_norm, na.rm = TRUE),
+    cvSNR       = cv(SNR_norm, na.rm = TRUE),
+    meanRatio   = mean(SNR_LW_Ratio_norm, na.rm = TRUE),
+    sdRatio     = sd(SNR_LW_Ratio_norm, na.rm = TRUE),
+    cvRatio     = cv(SNR_LW_Ratio_norm, na.rm = TRUE),
+    meanProduct = mean(SNR_LW_Product_norm, na.rm = TRUE),
+    sdProduct   = sd(SNR_LW_Product_norm, na.rm = TRUE),
+    cvProduct   = cv(SNR_LW_Product_norm, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+### AnimalSpecies x MRbrainregion ---------------------------------------------
+
+STATS$AnimalSpecies_MRbrainregion <- DATA %>%
+  group_by(AnimalSpecies, MRbrainregion) %>%
+  summarise(
+    meanLW      = mean(LW_norm, na.rm = TRUE),
+    sdLW        = sd(LW_norm, na.rm = TRUE),
+    cvLW        = cv(LW_norm, na.rm = TRUE),
+    meanSNR     = mean(SNR_norm, na.rm = TRUE),
+    sdSNR       = sd(SNR_norm, na.rm = TRUE),
+    cvSNR       = cv(SNR_norm, na.rm = TRUE),
+    meanRatio   = mean(SNR_LW_Ratio_norm, na.rm = TRUE),
+    sdRatio     = sd(SNR_LW_Ratio_norm, na.rm = TRUE),
+    cvRatio     = cv(SNR_LW_Ratio_norm, na.rm = TRUE),
+    meanProduct = mean(SNR_LW_Product_norm, na.rm = TRUE),
+    sdProduct   = sd(SNR_LW_Product_norm, na.rm = TRUE),
+    cvProduct   = cv(SNR_LW_Product_norm, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+### All -----------------------------------------------------------------------
+
+STATS$all <- list(
+  meanLW      = mean(DATA$LW_norm, na.rm = TRUE),
+  sdLW        = sd(DATA$LW_norm, na.rm = TRUE),
+  cvLW        = cv(DATA$LW_norm, na.rm = TRUE),
+  meanSNR     = mean(DATA$SNR_norm, na.rm = TRUE),
+  sdSNR       = sd(DATA$SNR_norm, na.rm = TRUE),
+  cvSNR       = cv(DATA$SNR_norm, na.rm = TRUE),
+  meanRatio   = mean(DATA$SNR_LW_Ratio_norm, na.rm = TRUE),
+  sdRatio     = sd(DATA$SNR_LW_Ratio_norm, na.rm = TRUE),
+  cvRatio     = cv(DATA$SNR_LW_Ratio_norm, na.rm = TRUE),
+  meanProduct = mean(DATA$SNR_LW_Product_norm, na.rm = TRUE),
+  sdProduct   = sd(DATA$SNR_LW_Product_norm, na.rm = TRUE),
+  cvProduct   = cv(DATA$SNR_LW_Product_norm, na.rm = TRUE)
+)
+
+
+# Save descriptive stats tables -----------------------------------------------
+
+write_csv(STATS$DP$LW, file.path(deriv_dir, "stats_DP_LW.csv"))
+write_csv(STATS$DP$SNR, file.path(deriv_dir, "stats_DP_SNR.csv"))
+write_csv(STATS$DP$Ratio, file.path(deriv_dir, "stats_DP_Ratio.csv"))
+write_csv(STATS$DP$Product, file.path(deriv_dir, "stats_DP_Product.csv"))
+
+write_csv(STATS$SiteID$LW, file.path(deriv_dir, "stats_SiteID_LW.csv"))
+write_csv(STATS$SiteID$SNR, file.path(deriv_dir, "stats_SiteID_SNR.csv"))
+write_csv(STATS$SiteID$Ratio, file.path(deriv_dir, "stats_SiteID_Ratio.csv"))
+write_csv(STATS$SiteID$Product, file.path(deriv_dir, "stats_SiteID_Product.csv"))
+
+write_csv(STATS$AnimalSpecies$LW, file.path(deriv_dir, "stats_AnimalSpecies_LW.csv"))
+write_csv(STATS$AnimalSpecies$SNR, file.path(deriv_dir, "stats_AnimalSpecies_SNR.csv"))
+write_csv(STATS$AnimalSpecies$Ratio, file.path(deriv_dir, "stats_AnimalSpecies_Ratio.csv"))
+write_csv(STATS$AnimalSpecies$Product, file.path(deriv_dir, "stats_AnimalSpecies_Product.csv"))
+
+write_csv(STATS$MRvendor$LW, file.path(deriv_dir, "stats_MRvendor_LW.csv"))
+write_csv(STATS$MRvendor$SNR, file.path(deriv_dir, "stats_MRvendor_SNR.csv"))
+write_csv(STATS$MRvendor$Ratio, file.path(deriv_dir, "stats_MRvendor_Ratio.csv"))
+write_csv(STATS$MRvendor$Product, file.path(deriv_dir, "stats_MRvendor_Product.csv"))
+
+write_csv(STATS$MRfield$LW, file.path(deriv_dir, "stats_MRfield_LW.csv"))
+write_csv(STATS$MRfield$SNR, file.path(deriv_dir, "stats_MRfield_SNR.csv"))
+write_csv(STATS$MRfield$Ratio, file.path(deriv_dir, "stats_MRfield_Ratio.csv"))
+write_csv(STATS$MRfield$Product, file.path(deriv_dir, "stats_MRfield_Product.csv"))
+
+write_csv(STATS$MRsequence$LW, file.path(deriv_dir, "stats_MRsequence_LW.csv"))
+write_csv(STATS$MRsequence$SNR, file.path(deriv_dir, "stats_MRsequence_SNR.csv"))
+write_csv(STATS$MRsequence$Ratio, file.path(deriv_dir, "stats_MRsequence_Ratio.csv"))
+write_csv(STATS$MRsequence$Product, file.path(deriv_dir, "stats_MRsequence_Product.csv"))
+
+write_csv(STATS$MRbrainregion$LW, file.path(deriv_dir, "stats_MRbrainregion_LW.csv"))
+write_csv(STATS$MRbrainregion$SNR, file.path(deriv_dir, "stats_MRbrainregion_SNR.csv"))
+write_csv(STATS$MRbrainregion$Ratio, file.path(deriv_dir, "stats_MRbrainregion_Ratio.csv"))
+write_csv(STATS$MRbrainregion$Product, file.path(deriv_dir, "stats_MRbrainregion_Product.csv"))
+
+write_csv(
+  STATS$AnimalSpecies_MRvendor,
+  file.path(deriv_dir, "stats_AnimalSpecies_MRvendor.csv")
+)
+
+write_csv(
+  STATS$AnimalSpecies_MRbrainregion,
+  file.path(deriv_dir, "stats_AnimalSpecies_MRbrainregion.csv")
+)
+
+write_csv(
+  tibble(
+    meanLW = STATS$all$meanLW,
+    sdLW = STATS$all$sdLW,
+    cvLW = STATS$all$cvLW,
+    meanSNR = STATS$all$meanSNR,
+    sdSNR = STATS$all$sdSNR,
+    cvSNR = STATS$all$cvSNR,
+    meanRatio = STATS$all$meanRatio,
+    sdRatio = STATS$all$sdRatio,
+    cvRatio = STATS$all$cvRatio,
+    meanProduct = STATS$all$meanProduct,
+    sdProduct = STATS$all$sdProduct,
+    cvProduct = STATS$all$cvProduct
+  ),
+  file.path(deriv_dir, "stats_all.csv")
+)
+
+
+# Pie chart function ----------------------------------------------------------
+
+pie_dir <- file.path(plots_dir, "piecharts")
+dir.create(pie_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Custom color palette 
+pie_palette <- c(
+  "#4C77C2",  # blue
+  "#EA7E2D",  # orange
+  "#A7A7A7",  # gray
+  "#F2BE00",  # yellow
+  "#5B9BD5",  # light blue
+  "#70AD47",  # green
+  "#264478",  # dark blue
+  "#9E480E",  # brown
+  "#636363",  # dark gray
+  "#997300",  # olive
+  "#255E91",  # steel blue
+  "#43682B"   # darker green
+)
+
+make_pie_chart <- function(data, var, plot_title = NULL, file_name = NULL, output_dir) {
+  var_sym <- rlang::sym(var)
+  
+  # AnimalSex should be based on row count, not unique DP-SiteID combinations
+  if (var == "AnimalSex") {
+    plot_data <- data %>%
+      dplyr::filter(!is.na(!!var_sym)) %>%
+      dplyr::group_by(!!var_sym) %>%
+      dplyr::summarise(n_count = dplyr::n(), .groups = "drop") %>%
+      dplyr::mutate(
+        perc = n_count / sum(n_count),
+        perc_label = scales::percent(perc, accuracy = 0.1),
+        legend_label = paste0(as.character(!!var_sym), " (n=", n_count, ", ", perc_label, ")")
+      ) %>%
+      dplyr::arrange(dplyr::desc(n_count))
+  } else {
+    # All other pie charts should be based on unique DP-SiteID combinations
+    plot_data <- data %>%
+      dplyr::filter(!is.na(!!var_sym), !is.na(DP), !is.na(SiteID)) %>%
+      dplyr::distinct(DP, SiteID, !!var_sym) %>%
+      dplyr::group_by(!!var_sym) %>%
+      dplyr::summarise(n_count = dplyr::n(), .groups = "drop") %>%
+      dplyr::mutate(
+        perc = n_count / sum(n_count),
+        perc_label = scales::percent(perc, accuracy = 0.1),
+        legend_label = paste0(as.character(!!var_sym), " (n=", n_count, ", ", perc_label, ")")
+      ) %>%
+      dplyr::arrange(dplyr::desc(n_count))
+  }
+  
+  if (is.null(plot_title)) plot_title <- paste(var, "distribution")
+  if (is.null(file_name)) file_name <- paste0(var, "_piechart.png")
+  
+  fill_vals <- rep(pie_palette, length.out = nrow(plot_data))
+  
+  p <- ggplot(plot_data, aes(x = 1, y = perc, fill = legend_label)) +
+    geom_col(
+      color = "white",
+      linewidth = 0.4,
+      width = 1
+    ) +
+    geom_text(
+      aes(x = 1.3, label = perc_label), # aes(label = count_label),
+      position = position_stack(vjust = 0.5),
+      color = "white",
+      size = 5,
+      fontface = "bold",
+      family = "serif"
+    ) +
+    coord_polar(theta = "y") +
+    scale_fill_manual(values = fill_vals) +
+    xlim(0.5, 1.5) +
+    theme_void() +
+    labs(
+      title = plot_title,
+      fill = NULL
+    ) +
+    theme(
+      plot.title = element_text(
+        family = "serif",
+        face = "plain",
+        size = 18,
+        hjust = 0.5,
+        color = "#4D4D4D"
+      ),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA),
+      legend.position = "bottom",
+      legend.direction = "horizontal",
+      legend.text = element_text(
+        family = "serif",
+        size = 10,
+        color = "#4D4D4D"
+      ),
+      legend.key.size = unit(0.35, "cm"),
+      legend.spacing.x = unit(0.2, "cm"),
+      plot.margin = margin(8, 8, 8, 8)
+    ) +
+    guides(
+      fill = guide_legend(
+        nrow = ceiling(nrow(plot_data) / 2),
+        byrow = TRUE
+      )
+    )
+  
+  print(p)
+  
+  ggsave(
+    filename = file.path(output_dir, file_name),
+    plot = p,
+    height = 5.8,
+    width = 5.8,
+    units = "in",
+    dpi = 300,
+    bg = "white"
+  )
+  
+  return(p)
+}
+
+
+# Create pie charts with percentages ------------------------------------------
+
+pie_specs <- list(
+  list(var = "SiteID",         title = "Site (#DPs)"),
+  list(var = "AnimalSpecies",  title = "Species (#DPs)"),
+  list(var = "AnimalStrain",   title = "Animal strain (#DPs)"),
+  list(var = "AnimalSex",      title = "Sex (#animals)"),
+  list(var = "MRvendor",       title = "Vendor (#DPs)"),
+  list(var = "MRfield",        title = "Field strength (#DPs)"),
+  list(var = "MRsequence",     title = "Pulse sequence (#DPs)"),
+  list(var = "MRbrainregion",  title = "Voxel location (#DPs)"),
+  list(var = "MRaverages",     title = "Nr. of averages (#DPs)")
+)
+
+pie_plots <- lapply(pie_specs, function(x) {
+  make_pie_chart(
+    data = DATA,
+    var = x$var,
+    plot_title = x$title,
+    file_name = paste0(x$var, "_piechart.png"),
+    output_dir = pie_dir
+  )
+})
+
+names(pie_plots) <- sapply(pie_specs, `[[`, "var")
+
+
+# Combined preview of pie charts ----------------------------------------------
+
+ combined_pies <- patchwork::wrap_plots(pie_plots, ncol = 3)
+ ggsave(
+   filename = file.path(plots_dir, "all_piecharts_combined.png"),
+   plot = combined_pies,
+   width = 16,
+   height = 18,
+   units = "in",
+   dpi = 300
+ )
+
+ 
+ # 3D pie chart function -------------------------------------------------------
+ 
+ # Source - https://stackoverflow.com/a/76142219
+ # Posted by Stéphane Laurent
+ # Retrieved 2026-03-26, License - CC BY-SA 4.0
+ 
+ library(rAmCharts4)
+ library(htmlwidgets)
+ 
+ make_pie_data_amcharts <- function(data, var) {
+   var_sym <- rlang::sym(var)
+   
+   if (var == "AnimalSex") {
+     plot_data <- data %>%
+       dplyr::filter(!is.na(!!var_sym)) %>%
+       dplyr::group_by(!!var_sym) %>%
+       dplyr::summarise(value = dplyr::n(), .groups = "drop")
+   } else {
+     plot_data <- data %>%
+       dplyr::filter(!is.na(!!var_sym), !is.na(DP), !is.na(SiteID)) %>%
+       dplyr::distinct(DP, SiteID, !!var_sym) %>%
+       dplyr::group_by(!!var_sym) %>%
+       dplyr::summarise(value = dplyr::n(), .groups = "drop")
+   }
+   
+   plot_data %>%
+     dplyr::rename(group = !!var_sym) %>%
+     dplyr::mutate(group = as.character(group))
+ }
+ 
+ 
+ # Create 3D pie charts with percentages --------------------------------------
+ 
+ amcharts_dir <- file.path(plots_dir, "amcharts_pies")
+ dir.create(amcharts_dir, recursive = TRUE, showWarnings = FALSE)
+ 
+ vars <- c(
+   "SiteID",
+   "AnimalSpecies",
+   "AnimalStrain",
+   "AnimalSex",
+   "MRvendor",
+   "MRfield",
+   "MRsequence",
+   "MRbrainregion",
+   "MRaverages"
+ )
+ 
+ charts <- list()
+ 
+ for (v in vars) {
+   dat <- make_pie_data_amcharts(DATA, v) %>%
+     dplyr::arrange(dplyr::desc(value))
+   
+   charts[[v]] <- amPieChart(
+     data = dat,
+     category = "group",
+     value = "value",
+     threeD = TRUE,
+     variableDepth = TRUE,
+     chartTitle = v,
+     legend = TRUE
+   )
+   
+   charts[[v]] <- htmlwidgets::onRender(
+     charts[[v]],
+     "
+    function(el, x) {
+      var chart = this.chart;
+
+      if (chart.series && chart.series.values.length > 0) {
+        var series = chart.series.values[0];
+
+        series.startAngle = 300;
+        series.endAngle   = 660;
+
+        series.slices.template.stroke = am4core.color('#FFFFFF');
+        series.slices.template.strokeWidth = 2;
+        series.slices.template.strokeOpacity = 1;
+      }
+    }
+    "
+   )
+   
+   print(charts[[v]])
+   
+   htmlwidgets::saveWidget(
+     widget = charts[[v]],
+     file = file.path(amcharts_dir, paste0(v, "_piechart.html")),
+     selfcontained = TRUE
+   )
+   
+   # browseURL(file.path(amcharts_dir,  paste0(v, "_piechart.html")))
+ }
+ 
+ 
+# Boxplots function -----------------------------------------------------------
+ 
+ # Common theme
+ theme_comp <- function() {
+   theme_classic() +
+     theme(
+       plot.title = element_text(
+         face = "bold",
+         size = 16,
+         hjust = 0.5,
+         color = "black",
+         family = "Helvetica"
+       ),
+       axis.title = element_text(
+         face = "bold",
+         size = 13,
+         color = "black",
+         family = "Helvetica"
+       ),
+       axis.text = element_text(
+         size = 11,
+         color = "black",
+         family = "Helvetica"
+       ),
+       strip.text = element_text(
+         face = "bold",
+         size = 12,
+         color = "black",
+         family = "Helvetica"
+       ),
+       legend.position = "none",
+       axis.line = element_line(color = "black", linewidth = 0.4),
+       axis.ticks = element_line(color = "black", linewidth = 0.4),
+       panel.spacing = unit(1, "lines")
+     )
+ }
+ 
+ # Optional but recommended:
+ # aggregate to one row per DP for cleaner plots
+ DATA_DP <- DATA %>%
+   dplyr::group_by(
+     DP, SiteID, AnimalSpecies, AnimalSex,
+     MRvendor, MRfield, MRsequence, MRbrainregion
+   ) %>%
+   dplyr::summarise(
+     LW_norm = mean(LW_norm, na.rm = TRUE),
+     SNR_norm = mean(SNR_norm, na.rm = TRUE),
+     SNR_LW_Product_norm = mean(SNR_LW_Product_norm, na.rm = TRUE),
+     SNR_LW_Ratio_norm = mean(SNR_LW_Ratio_norm, na.rm = TRUE),
+     .groups = "drop"
+   )
+ 
+ # General boxplot function
+ 
+ make_boxplot <- function(data, x_var, y_var, y_label, file_name) {
+   
+   plot_data <- data %>%
+     dplyr::filter(!is.na(.data[[x_var]]), !is.na(.data[[y_var]])) %>%
+     dplyr::mutate(
+       x_group = as.factor(.data[[x_var]])
+     )
+   
+   p <- ggplot(plot_data, aes(x = x_group, y = .data[[y_var]], fill = x_group)) +
+     geom_boxplot(
+       width = 0.65,
+       alpha = 0.9,
+       outlier.shape = 21,
+       outlier.size = 2.2,
+       outlier.stroke = 0.3,
+       color = "black",
+       linewidth = 0.4
+     ) +
+     geom_jitter(
+       width = 0.12,
+       alpha = 0.45,
+       size = 1.6,
+       color = "black"
+     ) +
+     labs(
+       title = paste(y_label, "by", x_var),
+       x = x_var,
+       y = y_label
+     ) +
+     scale_fill_brewer(palette = "Set2", na.translate = FALSE) +
+     theme_comp()
+   
+   # Rotate labels for crowded x-axes
+   if (nlevels(plot_data$x_group) > 4) {
+     p <- p + theme(
+       axis.text.x = element_text(angle = 45, hjust = 1)
+     )
+   }
+   
+   print(p)
+   
+   ggsave(
+     filename = file.path(plots_dir, file_name),
+     plot = p,
+     width = 7,
+     height = 5,
+     units = "in",
+     dpi = 300
+   )
+   
+   return(p)
+ }
+ 
+ # Create boxplots ------------------------------------------------------------
+ 
+ ### Y variables (measured) ---------------------------------------------
+ 
+ y_specs <- list(
+   list(var = "LW_norm",             label = "Normalized LW"),
+   list(var = "SNR_norm",            label = "Normalized SNR"),
+   list(var = "SNR_LW_Product_norm", label = "Normalized SNR×LW"),
+   list(var = "SNR_LW_Ratio_norm",   label = "Normalized SNR/LW")
+ )
+ 
+ ### X variables (grouping factors) -------------------------------------------
+ 
+ x_vars <- c(
+   "DP",
+   "SiteID",
+   "AnimalSpecies",
+   "AnimalSex",
+   "MRvendor",
+   "MRfield",
+   "MRsequence",
+   "MRbrainregion"
+ )
+ 
+ ### Generate all combinations ------------------------------------------------
+ 
+ all_boxplots <- list()
+ 
+ for (y in y_specs) {
+   for (x in x_vars) {
+     
+     file_name <- paste0("boxplot_", y$var, "_by_", x, ".png")
+     key <- paste(y$var, x, sep = "_by_")
+     
+     all_boxplots[[key]] <- make_boxplot(
+       data = DATA_DP,   # use DATA here instead if you want row-level plots
+       x_var = x,
+       y_var = y$var,
+       y_label = y$label,
+       file_name = file_name
+     )
+   }
+ }
+ 
+ 
+### Double variable boxplots: MRvendor and AnimalSpecies -----------------------
+ 
+ # Common theme for boxplots
+ theme_comp <- function() {
+   theme_classic() +
+     theme(
+       plot.title = element_text(
+         face = "bold",
+         size = 16,
+         hjust = 0.5,
+         color = "black",
+         family = "Helvetica"
+       ),
+       axis.title = element_text(
+         face = "bold",
+         size = 13,
+         color = "black",
+         family = "Helvetica"
+       ),
+       axis.text = element_text(
+         size = 11,
+         color = "black",
+         family = "Helvetica"
+       ),
+       strip.text = element_text(
+         face = "bold",
+         size = 12,
+         color = "black",
+         family = "Helvetica"
+       ),
+       legend.position = "none",
+       axis.line = element_line(color = "black", linewidth = 0.4),
+       axis.ticks = element_line(color = "black", linewidth = 0.4),
+       panel.spacing = unit(1, "lines")
+     )
+ }
+ 
+ # Optional but recommended:
+ # aggregate to one row per DP so each DP contributes once
+ DATA_DP <- DATA %>%
+   dplyr::group_by(
+     DP, SiteID, AnimalSpecies, AnimalSex,
+     MRvendor, MRfield, MRsequence, MRbrainregion
+   ) %>%
+   dplyr::summarise(
+     LW_norm = mean(LW_norm, na.rm = TRUE),
+     SNR_norm = mean(SNR_norm, na.rm = TRUE),
+     SNR_LW_Product_norm = mean(SNR_LW_Product_norm, na.rm = TRUE),
+     SNR_LW_Ratio_norm = mean(SNR_LW_Ratio_norm, na.rm = TRUE),
+     .groups = "drop"
+   )
+ 
+ make_boxplot_vendor_species <- function(data, y_var, y_label, file_name) {
+   
+   plot_data <- data %>%
+     dplyr::filter(
+       !is.na(MRvendor),
+       !is.na(AnimalSpecies),
+       !is.na(.data[[y_var]])
+     ) %>%
+     dplyr::mutate(
+       MRvendor = as.factor(MRvendor),
+       AnimalSpecies = as.factor(AnimalSpecies)
+     )
+   
+   p <- ggplot(plot_data, aes(x = MRvendor, y = .data[[y_var]], fill = MRvendor)) +
+     geom_boxplot(
+       width = 0.65,
+       alpha = 0.9,
+       outlier.shape = 21,
+       outlier.size = 2.0,
+       outlier.stroke = 0.3,
+       color = "black",
+       linewidth = 0.4
+     ) +
+     geom_jitter(
+       width = 0.12,
+       alpha = 0.4,
+       size = 1.6,
+       color = "black"
+     ) +
+     facet_wrap(~ AnimalSpecies, scales = "free_x") +
+     labs(
+       title = paste(y_label, "by vendor and animal species"),
+       x = "Vendor",
+       y = y_label
+     ) +
+     scale_fill_brewer(palette = "Set2", na.translate = FALSE) +
+     theme_comp()
+   
+   print(p)
+   
+   ggsave(
+     filename = file.path(plots_dir, file_name),
+     plot = p,
+     width = 8,
+     height = 5,
+     units = "in",
+     dpi = 300
+   )
+   
+   return(p)
+ }
+ 
+ facet_specs <- list(
+   list(
+     var = "LW_norm",
+     label = "Normalized LW",
+     file = "boxplot_LW_norm_by_MRvendor_AnimalSpecies.png"
+   ),
+   list(
+     var = "SNR_norm",
+     label = "Normalized SNR",
+     file = "boxplot_SNR_norm_by_MRvendor_AnimalSpecies.png"
+   ),
+   list(
+     var = "SNR_LW_Product_norm",
+     label = "Normalized SNR×LW product",
+     file = "boxplot_SNR_LW_Product_norm_by_MRvendor_AnimalSpecies.png"
+   ),
+   list(
+     var = "SNR_LW_Ratio_norm",
+     label = "Normalized SNR/LW ratio",
+     file = "boxplot_SNR_LW_Ratio_norm_by_MRvendor_AnimalSpecies.png"
+   )
+ )
+ 
+ facet_plots <- lapply(facet_specs, function(x) {
+   make_boxplot_vendor_species(
+     data = DATA_DP,   # use DATA here instead if you want row-level plots
+     y_var = x$var,
+     y_label = x$label,
+     file_name = x$file
+   )
+ })
+ 
+ names(facet_plots) <- sapply(facet_specs, `[[`, "var")
+ 
+
+
+# Linear-mixed models ---------------------------------------------------------
+
+# Selection of optimizers to use
+defaultControl <- list(algorithm="NLOPT_LN_BOBYQA", xtol_rel=1e-6, maxeval=1e5)
+optWrap.nloptwrap.NLOPT_LN_BOBYQA <- lmerControl(optimizer="nloptFun")
+optWrap.optimx.nlminb             <- lmerControl(optimizer="optimx", optCtrl=list(method="nlminb", eval.max=1e5))
+optWrap.minqa.bobyqa              <- lmerControl(optimizer="bobyqa")
+
+optimToUse <- optWrap.nloptwrap.NLOPT_LN_BOBYQA
+
+# Y.M.0.0 <- lm(SNR_LW_Ratio_norm ~ 1, data=DATA)
+Y.M.0.1 <- lmer(cs.(SNR_LW_Ratio_norm) ~ (1 | DP), data = DATA, REML = FALSE, control = optimToUse)
+# Y.M.0.2 <- lmer(SNR_LW_Ratio_norm ~ (1 | MRvendor), data = DATA, REML = FALSE, control = optimToUse)
+# Y.M.0.3 <- lmer(SNR_LW_Ratio_norm ~ (1 | SiteID), data = DATA, REML = FALSE, control = optimToUse)
+# Y.M.0.4 <- lmer(SNR_LW_Ratio_norm ~ (1 | MRvendor) + (1 | SiteID) , data = DATA, REML = FALSE, control = optimToUse)
+Y.M.0.5 <- lmer(cs.(SNR_LW_Ratio_norm) ~ (1 | MRvendor) + (1 | SiteID) + (1 | DP),
+                data = DATA, REML = FALSE, control = optimToUse)
+# Y.M.1.0 <- lmer(SNR_LW_Ratio_norm ~ (1 | MRvendor) + (1 | SiteID) + (1 | DP) + 
+#                    (1 | AnimalSpecies) , data = DATA, REML = FALSE, control = optimToUse)
+# Y.M.2.0 <- lmer(SNR_LW_Ratio_norm ~ (1 | MRvendor) + (1 | SiteID) + (1 | DP) + 
+#                    (1 | AnimalSpecies) + (1 | MRbrainregion) , data = DATA, REML = FALSE, control = optimToUse)
+# Y.M.3.0 <- lmer(SNR_LW_Ratio_norm ~ (1 | MRvendor) + (1 | SiteID) + (1 | DP) + 
+#                    (1 | AnimalSpecies) + (1 | MRbrainregion) + (1 | MRsequence) , data = DATA, REML = FALSE, control = optimToUse)
+# Y.M.4.0 <- lmer(SNR_LW_Ratio_norm ~ MRfield + (1 | MRvendor) + (1 | SiteID) + (1 | DP) + 
+#                    (1 | AnimalSpecies) + (1 | MRbrainregion) + (1 | MRsequence) , data = DATA, REML = FALSE, control = optimToUse)
+# Y.M.5.0 <- lmer(SNR_LW_Ratio_norm ~ MRfield + AnimalAge + (1 | MRvendor) + (1 | SiteID) + (1 | DP) + 
+#                    (1 | AnimalSpecies) + (1 | MRbrainregion) + (1 | MRsequence) , data = DATA, REML = FALSE, control = optimToUse)
+# Y.M.6.0 <- lmer(SNR_LW_Ratio_norm ~ MRfield + AnimalAge + AnimalSex + (1 | MRvendor) + (1 | SiteID) + (1 | DP) + 
+#                    (1 | AnimalSpecies) + (1 | MRbrainregion) + (1 | MRsequence) , data = DATA, REML = FALSE, control = optimToUse)
+
+
+# Model diagnostics -----------------------------------------------------------
+
+dotplot(ranef(Y.M.0.1, condVar=TRUE), scales=list(relation="free"))
+dotplot(ranef(Y.M.0.5, condVar=TRUE), scales=list(relation="free"))
+
+# check_model(Y.M.0.0)
+check_model(Y.M.0.1)
+check_model(Y.M.0.5)
+model_performance(Y.M.0.1)
+model_performance(Y.M.0.5)
+# r2(Y.M.0.1)
+# check_model(Y.M.0.2)
+# check_model(Y.M.0.3)
+# check_model(Y.M.0.4)
+# check_model(Y.M.0.5)
+# check_model(Y.M.1.0)
+# check_model(Y.M.2.0)
+# check_model(Y.M.3.0)
+# check_model(Y.M.4.0)
+# check_model(Y.M.5.0)
+# check_model(Y.M.6.0)
+
+# z <- profile(Y.M.0.1)
+# z_ci <- confint(z, level=0.95)^2
+# xyplot(z, aspect=1)
+
+# plot(Y.M.0.1)
+# hist(resid(Y.M.0.1))
+
+
+# Variance components ---------------------------------------------------------
+
+# Save variance components of three-level null model
+# print(VarCorr(Y.M.0.1), comp = c("Variance", "Std.Dev."))
+vc <- as.data.frame(VarCorr(Y.M.0.1))[4]
+vpc.M.0.1 <- round(vc/sum(vc)*100,1)
+dimnames(vpc.M.0.1)[[1]] <- c("DP", "Residual")
+
+# print(VarCorr(Y.M.0.5), comp = c("Variance", "Std.Dev."))
+vc <- as.data.frame(VarCorr(Y.M.0.5))[4]
+vpc.M.0.5 <- round(vc/sum(vc)*100,1)
+dimnames(vpc.M.0.5)[[1]] <- c("DP", "Site", "Vendor", "Residual")
+
+
+# End -------------------------------------------------------------------------
+
