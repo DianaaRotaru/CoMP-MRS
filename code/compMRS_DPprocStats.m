@@ -5,6 +5,7 @@
 clear; clc;
 
 cd('A:\CoMP-MRS\CoMP-MRS-DGR\stats\ProcSpectralQuality\data\input_table\v3_20260415')
+cd('A:\CoMP-MRS\CoMP-MRS-DGR\stats\ProcSpectralQuality-ISMRM2027\data\input_table\v4_20261025')
 
 %% File names
 xlsxFile       = 'CoMP-MRS_participantSpreadsheet.xlsx';
@@ -41,6 +42,18 @@ fullTable = readtable(xlsxFile, opts);
 % 37 = MRS.VoI.size
 % 44 = MRS.n.ave
 % 62 = MRS.shim.method
+
+% 30 = MRI.console
+% 31 = MRI.software.version
+% 38 = MRS.sw
+% 39 = MRS.n.pts
+% 40 = MRS.TE
+% 41 = MRS.TR 
+% 55 = MRS.excite.pulse.type
+% 56 = MRS.excite.pulse.duration
+% 57 = MRS.refoc.pulse.type
+% 58 = MRS.refoc.pulse.duration
+
 selectedCols = [1 3 6 7 9 11 12 28 29 32 35 36 37 44 62];
 selectedData = fullTable(:, selectedCols);
 
